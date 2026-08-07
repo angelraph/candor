@@ -1,0 +1,17 @@
+{
+  "name": "candor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Candor — the AI agent that can refuse your trade, and proves its judgment on-chain. Built for OKX X Layer BuildX AI Season Hackathon.",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @candor/web dev",
+    "dev:api": "pnpm --filter @candor/api dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  }
+}

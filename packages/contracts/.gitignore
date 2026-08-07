@@ -1,0 +1,23 @@
+# Compiler files
+cache/
+out/
+
+# Vendored deps — reproduced via `forge install` + foundry.lock, not committed
+lib/
+
+# Commonly ignored directories
+.logs/
+.ignore/
+
+# Ignores development broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+.env.*
+!.env.example

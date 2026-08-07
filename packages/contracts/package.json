@@ -1,0 +1,12 @@
+{
+  "name": "@candor/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "test:gas": "forge test --gas-report",
+    "deploy:testnet": "forge script script/Deploy.s.sol --rpc-url xlayer_testnet --broadcast --verify",
+    "deploy:mainnet": "forge script script/Deploy.s.sol --rpc-url xlayer_mainnet --broadcast --verify"
+  }
+}
