@@ -1,2 +1,2 @@
-export * from "./schemas.js";
-export * from "./chains.js";
+export * from "./schemas";
+export * from "./chains";

@@ -1,5 +1,4 @@
 import { createConfig, http, injected } from "wagmi";
-import { walletConnect } from "wagmi/connectors";
 import type { Chain } from "viem";
 import { X_LAYER_MAINNET, X_LAYER_TESTNET } from "@candor/shared";
 
@@ -20,15 +19,17 @@ function toViemChain(def: typeof X_LAYER_MAINNET | typeof X_LAYER_TESTNET): Chai
 export const xLayerMainnet = toViemChain(X_LAYER_MAINNET);
 export const xLayerTestnet = toViemChain(X_LAYER_TESTNET);
 
-const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-
-// WalletConnect is optional — omitted (not silently broken) when no project
-// ID is configured, same "explicit mock/live flag" pattern as the backend.
-// The injected connector (OKX Wallet extension, MetaMask, etc.) always works.
-const connectors = [
-  injected(),
-  ...(walletConnectProjectId ? [walletConnect({ projectId: walletConnectProjectId })] : []),
-];
+// WalletConnect deliberately omitted for now: `wagmi/connectors` only ships
+// as one barrel file, and importing anything from it (even just
+// `walletConnect`) statically pulls in the `baseAccount` connector too,
+// which transitively depends on @coinbase/cdp-sdk's x402 payment code —
+// which references unpublished `@x402/*` packages and fails to build. Not
+// a real loss right now: NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID isn't
+// configured anyway. The injected connector (OKX Wallet extension,
+// MetaMask, etc.) covers the actual demo path. Revisit via a dynamic
+// `import("wagmi/connectors")` (code-split, only loaded if a project ID
+// is ever configured) if WalletConnect support becomes worth the effort.
+const connectors = [injected()];
 
 export const wagmiConfig = createConfig({
   chains: [xLayerTestnet, xLayerMainnet],
@@ -40,4 +41,4 @@ export const wagmiConfig = createConfig({
   ssr: true,
 });
 
-export const walletConnectConfigured = Boolean(walletConnectProjectId);
+export const walletConnectConfigured = false;
