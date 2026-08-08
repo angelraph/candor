@@ -10,6 +10,7 @@ import {
 } from "../pipeline/intent-pipeline.js";
 import { VaultNotConfiguredError } from "../integrations/vault.js";
 import { AnthropicNotConfiguredError } from "../pipeline/agent-llm.js";
+import { OkxDexUnreachableError } from "../integrations/okx-dex.js";
 
 const FinalizeBodySchema = z.object({
   decision: z.enum(["confirm", "override", "dismiss"]),
@@ -58,6 +59,9 @@ function handlePipelineError(err: unknown, reply: import("fastify").FastifyReply
   }
   if (err instanceof AnthropicNotConfiguredError) {
     return reply.status(503).send({ error: "llm_not_configured", message: err.message });
+  }
+  if (err instanceof OkxDexUnreachableError) {
+    return reply.status(503).send({ error: "okx_dex_unreachable", message: err.message });
   }
   if (err instanceof ConfirmCardExpiredError) {
     return reply.status(410).send({ error: "confirm_card_expired", message: err.message });

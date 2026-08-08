@@ -66,6 +66,11 @@ export const QuoteSchema = z.object({
   liquidityDepthUsd: z.number().nonnegative(),
   route: z.array(z.string()),
   gasEstimateWei: z.string(),
+  // True when OKX_DEX_API_KEY wasn't configured and this is a synthetic
+  // quote — surfaced end-to-end (not just logged server-side) so the
+  // confirm card can show it honestly rather than presenting mock numbers
+  // as if they were live market data.
+  mock: z.boolean().default(false),
 });
 export type Quote = z.infer<typeof QuoteSchema>;
 

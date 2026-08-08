@@ -36,12 +36,35 @@ interface OkxSwapResponse {
   routerResult: OkxQuoteResponse;
 }
 
+/** Thrown on timeout or network-level failure reaching OKX — distinct from an
+ *  OKX-returned error (bad request, bad signature, etc.) so callers can tell
+ *  "OKX said no" apart from "couldn't reach OKX at all" and react accordingly
+ *  (the latter is always safe to treat as transient / fall back on). */
+export class OkxDexUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super(`OKX DEX API unreachable: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "OkxDexUnreachableError";
+  }
+}
+
+// Swap/quote calls have no sensible fallback (they ARE the thing being
+// requested), so they get more patience. all-tokens feeds the classifier's
+// symbol resolution, which is supposed to stay near-instant — it gets a
+// short leash so a down OKX can't drag basic token lookups down with it.
+const DEFAULT_TIMEOUT_MS = 6_000;
+const TOKEN_LIST_TIMEOUT_MS = 2_000;
+
 function sign(timestamp: string, method: string, requestPath: string, body: string): string {
   const prehash = `${timestamp}${method}${requestPath}${body}`;
   return createHmac("sha256", config.okxDex.apiSecret ?? "").update(prehash).digest("base64");
 }
 
-async function okxRequest<T>(method: "GET", path: string, query: Record<string, string>): Promise<T> {
+async function okxRequest<T>(
+  method: "GET",
+  path: string,
+  query: Record<string, string>,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<T> {
   const requestPath = `${path}?${new URLSearchParams(query).toString()}`;
   const timestamp = new Date().toISOString();
   const headers: Record<string, string> = {
@@ -52,7 +75,21 @@ async function okxRequest<T>(method: "GET", path: string, query: Record<string, 
   };
   if (config.okxDex.projectId) headers["OK-ACCESS-PROJECT"] = config.okxDex.projectId;
 
-  const res = await fetch(`${config.okxDex.baseUrl}${requestPath}`, { method, headers });
+  // A hung/unreachable OKX host must fail fast (and distinctly), not take
+  // the whole request pipeline down with a multi-minute TCP timeout — this
+  // is what let a swap-only OKX outage previously break vault deposits too.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${config.okxDex.baseUrl}${requestPath}`, { method, headers, signal: controller.signal });
+  } catch (err) {
+    throw new OkxDexUnreachableError(err);
+  } finally {
+    clearTimeout(timeout);
+  }
+
   if (!res.ok) {
     throw new Error(`OKX DEX API ${method} ${path} -> ${res.status} ${await res.text()}`);
   }
@@ -99,9 +136,12 @@ export async function getAllTokens(): Promise<OkxTokenInfo[]> {
     console.warn("[okx-dex] mock mode — OKX_DEX_API_KEY not set, returning empty token list");
     return [];
   }
-  return okxRequest<OkxTokenInfo[]>("GET", `${OKX_DEX_PATH_PREFIX}/all-tokens`, {
-    chainId: String(config.chainId),
-  });
+  return okxRequest<OkxTokenInfo[]>(
+    "GET",
+    `${OKX_DEX_PATH_PREFIX}/all-tokens`,
+    { chainId: String(config.chainId) },
+    TOKEN_LIST_TIMEOUT_MS
+  );
 }
 
 export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> {

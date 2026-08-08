@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--candor-bg, #f7f6f2);
+  color: var(--candor-fg, #0b0e14);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    --candor-bg: #0b0e14;
+    --candor-fg: #f2f1ec;
+  }
+}
