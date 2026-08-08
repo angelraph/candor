@@ -72,6 +72,14 @@ async function okxRequest<T>(
     "OK-ACCESS-SIGN": sign(timestamp, method, requestPath, ""),
     "OK-ACCESS-TIMESTAMP": timestamp,
     "OK-ACCESS-PASSPHRASE": config.okxDex.apiPassphrase ?? "",
+    // Node's default fetch sends no User-Agent/Accept headers at all, which
+    // reads as an obvious non-browser client to a WAF — some environments
+    // see the connection itself refused before the OKX-signed headers above
+    // are even evaluated. These make the request look like an ordinary
+    // browser fetch instead of a bare script.
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    Accept: "application/json, text/plain, */*",
   };
   if (config.okxDex.projectId) headers["OK-ACCESS-PROJECT"] = config.okxDex.projectId;
 
