@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useSendTransaction, useWriteContract } fro
 import type { ConfirmCard } from "@candor/shared";
 import { postIntent, finalizeIntent, getLedgerStatus, ApiError, type LedgerStatusResult } from "@/lib/api-client";
 import { ERC20_ABI } from "@/lib/erc20-abi";
+import { describeTxError } from "@/lib/describe-error";
 import { ConfirmCardView } from "./ConfirmCardView";
 
 const EXAMPLE_PROMPTS = [
@@ -80,6 +81,19 @@ export function ChatPanel() {
       const token = (action.type === "swap" ? action.params.fromToken : action.params.assetToken) as `0x${string}`;
       const amountWei = BigInt(action.params.amountWei);
 
+      // Pre-flight balance check: catch "you don't have enough" as a clear
+      // message before spending a wallet round-trip on a signature that was
+      // always going to fail on-chain anyway.
+      const balance = await publicClient.readContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [address],
+      });
+      if (balance < amountWei) {
+        throw new Error("Insufficient balance to cover this transaction.");
+      }
+
       const allowance = await publicClient.readContract({
         address: token,
         abi: ERC20_ABI,
@@ -94,7 +108,14 @@ export function ChatPanel() {
           functionName: "approve",
           args: [spender, amountWei],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        // waitForTransactionReceipt resolves even for a REVERTED tx — it
+        // only throws on a genuine RPC/network failure. Must check
+        // receipt.status explicitly or a failed approval silently proceeds
+        // to the next step as if it had succeeded.
+        const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        if (approveReceipt.status !== "success") {
+          throw new Error("The approval transaction failed on-chain — nothing was swapped/deposited.");
+        }
       }
 
       const txHash = await sendTransactionAsync({
@@ -102,12 +123,17 @@ export function ChatPanel() {
         data: tx.data as `0x${string}`,
         value: BigInt(tx.value || "0"),
       });
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status !== "success") {
+        throw new Error(
+          "The transaction was mined but reverted on-chain — no funds moved. This can happen if the quote went stale or the pool state changed; try again."
+        );
+      }
 
       setResult({ txHash, anchored: true });
       setConfirmCard(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The transaction didn't go through.");
+      setError(describeTxError(err));
     } finally {
       setBusy(null);
     }
