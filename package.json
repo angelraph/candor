@@ -6,7 +6,7 @@
   "engines": {
     "node": "20.x"
   },
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev:web": "pnpm --filter @candor/web dev",
     "dev:api": "pnpm --filter @candor/api dev",
