@@ -147,7 +147,7 @@ export async function getAllTokens(): Promise<OkxTokenInfo[]> {
   return okxRequest<OkxTokenInfo[]>(
     "GET",
     `${OKX_DEX_PATH_PREFIX}/all-tokens`,
-    { chainId: String(config.chainId) },
+    { chainIndex: String(config.chainId) },
     TOKEN_LIST_TIMEOUT_MS
   );
 }
@@ -162,7 +162,7 @@ export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> 
     mock = true;
   } else {
     data = await okxRequest<OkxQuoteResponse>("GET", `${OKX_DEX_PATH_PREFIX}/quote`, {
-      chainId: String(config.chainId),
+      chainIndex: String(config.chainId),
       fromTokenAddress: params.fromTokenAddress,
       toTokenAddress: params.toTokenAddress,
       amount: params.amountWei,
@@ -203,7 +203,7 @@ export async function getSwapTransaction(params: GetSwapTxParams): Promise<DexSw
   }
 
   const data = await okxRequest<OkxSwapResponse[]>("GET", `${OKX_DEX_PATH_PREFIX}/swap`, {
-    chainId: String(config.chainId),
+    chainIndex: String(config.chainId),
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amountWei,
@@ -226,7 +226,7 @@ export async function getApproveTransaction(params: {
     return null;
   }
   return okxRequest<{ to: string; data: string }>("GET", `${OKX_DEX_PATH_PREFIX}/approve-transaction`, {
-    chainId: String(config.chainId),
+    chainIndex: String(config.chainId),
     tokenContractAddress: params.tokenContractAddress,
     approveAmount: params.approveAmountWei,
   });
