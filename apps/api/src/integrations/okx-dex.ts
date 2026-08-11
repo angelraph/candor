@@ -217,7 +217,11 @@ export async function getSwapTransaction(params: GetSwapTxParams): Promise<DexSw
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amountWei,
-    slippage: (params.slippageBps / 10_000).toString(),
+    // /swap wants 'slippagePercent' specifically — verified against a live
+    // 400 response ('Parameter slippagePercent cannot be empty'); /quote
+    // accepts plain 'slippage' instead. Undocumented inconsistency between
+    // the two endpoints, not a guess.
+    slippagePercent: (params.slippageBps / 10_000).toString(),
     userWalletAddress: params.userWalletAddress,
   });
   const swap = data[0];
