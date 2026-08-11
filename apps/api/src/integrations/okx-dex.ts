@@ -22,13 +22,20 @@ interface OkxTokenInfo {
   decimals: string;
 }
 
+// Matches OKX's real response shape (verified against a live mainnet quote,
+// not the docs — several fields differ from what's documented: the whole
+// thing is wrapped in a single-element array, priceImpactPercent (not
+// -Percentage), and dexRouterList nests dexProtocol.{dexName,percent}
+// rather than a flat {router, routerPercent}).
 interface OkxQuoteResponse {
-  chainId: string;
+  chainIndex: string;
   toTokenAmount: string;
   fromTokenAmount: string;
-  priceImpactPercentage: string;
+  priceImpactPercent: string;
   estimateGasFee: string;
-  dexRouterList: Array<{ router: string; routerPercent: string }>;
+  dexRouterList: Array<{
+    dexProtocol: { dexName: string; percent: string };
+  }>;
 }
 
 interface OkxSwapResponse {
@@ -119,12 +126,12 @@ function mockQuote(fromAmountWei: string): OkxQuoteResponse {
   // OKX_DEX_API_KEY etc. are configured.
   const toAmount = (BigInt(fromAmountWei) * 1800n) / 3_000_000n; // rough ETH~1800 vs 6-decimal stable-ish input
   return {
-    chainId: String(config.chainId),
+    chainIndex: String(config.chainId),
     toTokenAmount: toAmount.toString(),
     fromTokenAmount: fromAmountWei,
-    priceImpactPercentage: "0.12",
+    priceImpactPercent: "0.12",
     estimateGasFee: "180000",
-    dexRouterList: [{ router: "mock-router/no-key-configured", routerPercent: "100" }],
+    dexRouterList: [{ dexProtocol: { dexName: "mock-router/no-key-configured", percent: "100" } }],
   };
 }
 
@@ -161,13 +168,16 @@ export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> 
     data = mockQuote(params.amountWei);
     mock = true;
   } else {
-    data = await okxRequest<OkxQuoteResponse>("GET", `${OKX_DEX_PATH_PREFIX}/quote`, {
+    // OKX wraps /quote responses in a single-element array (verified against
+    // a live response, not assumed from docs) — same convention as /swap.
+    const results = await okxRequest<OkxQuoteResponse[]>("GET", `${OKX_DEX_PATH_PREFIX}/quote`, {
       chainIndex: String(config.chainId),
       fromTokenAddress: params.fromTokenAddress,
       toTokenAddress: params.toTokenAddress,
       amount: params.amountWei,
       slippage: (params.slippageBps / 10_000).toString(),
     });
+    data = results[0];
   }
 
   const minReceived =
@@ -176,9 +186,9 @@ export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> 
   return {
     expectedOutWei: data.toTokenAmount,
     minReceivedWei: minReceived.toString(),
-    priceImpactBps: Math.round(Number(data.priceImpactPercentage) * 100),
+    priceImpactBps: Math.round(Number(data.priceImpactPercent) * 100),
     liquidityDepthUsd: 0, // OKX quote doesn't expose this directly; risk engine derives a proxy from route count/impact
-    route: data.dexRouterList.map((r) => `${r.router} (${r.routerPercent}%)`),
+    route: data.dexRouterList.map((r) => `${r.dexProtocol.dexName} (${r.dexProtocol.percent}%)`),
     gasEstimateWei: data.estimateGasFee,
     mock,
   };
