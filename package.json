@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Candor — the AI agent that can refuse your trade, and proves its judgment on-chain. Built for OKX X Layer BuildX AI Season Hackathon.",
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "packageManager": "pnpm@11.20.0",
   "scripts": {
