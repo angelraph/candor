@@ -28,7 +28,7 @@ const EnvSchema = z.object({
   OKX_DEX_PROJECT_ID: optionalEnv(z.string()),
   OKX_DEX_BASE_URL: z.string().url().default("https://web3.okx.com"),
 
-  ANTHROPIC_API_KEY: optionalEnv(z.string()),
+  OPENAI_API_KEY: optionalEnv(z.string()),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -72,8 +72,8 @@ export const config = {
   },
   okxDexConfigured: Boolean(env.OKX_DEX_API_KEY && env.OKX_DEX_API_SECRET && env.OKX_DEX_API_PASSPHRASE),
 
-  anthropicApiKey: env.ANTHROPIC_API_KEY ?? null,
-  anthropicConfigured: Boolean(env.ANTHROPIC_API_KEY),
+  llmApiKey: env.OPENAI_API_KEY ?? null,
+  llmConfigured: Boolean(env.OPENAI_API_KEY),
 } as const;
 
 export type Config = typeof config;

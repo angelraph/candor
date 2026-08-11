@@ -27,5 +27,5 @@ const address = await app.listen({ port: config.port, host: "0.0.0.0" });
 app.log.info(`Candor API listening at ${address}`);
 app.log.info(
   `Mode: chain=${config.chainId} contracts=${config.contractsConfigured ? "configured" : "MOCK"} ` +
-    `okxDex=${config.okxDexConfigured ? "live" : "MOCK"} anthropic=${config.anthropicConfigured ? "live" : "unavailable"}`
+    `okxDex=${config.okxDexConfigured ? "live" : "MOCK"} llm=${config.llmConfigured ? "live" : "unavailable"}`
 );

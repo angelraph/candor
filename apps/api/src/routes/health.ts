@@ -8,6 +8,6 @@ export async function healthRoutes(app: FastifyInstance) {
     contractsConfigured: config.contractsConfigured,
     agentSignerConfigured: config.agentSignerConfigured,
     okxDexConfigured: config.okxDexConfigured,
-    anthropicConfigured: config.anthropicConfigured,
+    llmConfigured: config.llmConfigured,
   }));
 }

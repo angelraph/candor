@@ -9,7 +9,7 @@ import {
   ConfirmCardExpiredError,
 } from "../pipeline/intent-pipeline.js";
 import { VaultNotConfiguredError } from "../integrations/vault.js";
-import { AnthropicNotConfiguredError } from "../pipeline/agent-llm.js";
+import { LlmNotConfiguredError } from "../pipeline/agent-llm.js";
 import { OkxDexUnreachableError } from "../integrations/okx-dex.js";
 
 const FinalizeBodySchema = z.object({
@@ -57,7 +57,7 @@ function handlePipelineError(err: unknown, reply: import("fastify").FastifyReply
   if (err instanceof VaultNotConfiguredError) {
     return reply.status(503).send({ error: "vault_not_configured", message: err.message });
   }
-  if (err instanceof AnthropicNotConfiguredError) {
+  if (err instanceof LlmNotConfiguredError) {
     return reply.status(503).send({ error: "llm_not_configured", message: err.message });
   }
   if (err instanceof OkxDexUnreachableError) {

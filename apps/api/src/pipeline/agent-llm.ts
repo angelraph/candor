@@ -1,18 +1,19 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { config } from "../config.js";
 import type { RiskFeatures, VerdictType } from "@candor/shared";
 
 // Fast, cheap model — deliberately not a large/slow one. The slow path is
 // still meant to feel fast; it just does real reasoning the rule engine
 // can't, for borderline/novel requests only.
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = "gpt-4o-mini";
 
-const client = config.anthropicConfigured ? new Anthropic({ apiKey: config.anthropicApiKey! }) : null;
+const client = config.llmConfigured ? new OpenAI({ apiKey: config.llmApiKey! }) : null;
 
-export class AnthropicNotConfiguredError extends Error {
+export class LlmNotConfiguredError extends Error {
   constructor() {
-    super("ANTHROPIC_API_KEY is not configured — slow-path parsing/verdicts are unavailable in this mode");
-    this.name = "AnthropicNotConfiguredError";
+    super("OPENAI_API_KEY is not configured — slow-path parsing/verdicts are unavailable in this mode");
+    this.name = "LlmNotConfiguredError";
   }
 }
 
@@ -26,49 +27,57 @@ export type ParsedIntent =
   | { type: "vault_deposit"; assetTokenSymbol: string; amountHuman: string | "full_balance" }
   | { type: "unsupported"; reason: string };
 
-const PARSE_INTENT_TOOL: Anthropic.Tool = {
-  name: "parsed_intent",
-  description: "The structured financial action extracted from the user's message.",
-  input_schema: {
-    type: "object",
-    properties: {
-      type: { type: "string", enum: ["swap", "vault_deposit", "unsupported"] },
-      fromTokenSymbol: { type: "string", description: "Token symbol being sold, for swaps only." },
-      toTokenSymbol: { type: "string", description: "Token symbol being bought, for swaps only." },
-      assetTokenSymbol: { type: "string", description: "Token symbol being deposited, for vault deposits only." },
-      amountHuman: {
-        type: "string",
-        description:
-          "Amount in human units as a plain number string (e.g. '500'), or the literal 'full_balance' if the user means their entire/idle balance.",
+const PARSE_INTENT_TOOL: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "parsed_intent",
+    description: "The structured financial action extracted from the user's message.",
+    parameters: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["swap", "vault_deposit", "unsupported"] },
+        fromTokenSymbol: { type: "string", description: "Token symbol being sold, for swaps only." },
+        toTokenSymbol: { type: "string", description: "Token symbol being bought, for swaps only." },
+        assetTokenSymbol: { type: "string", description: "Token symbol being deposited, for vault deposits only." },
+        amountHuman: {
+          type: "string",
+          description:
+            "Amount in human units as a plain number string (e.g. '500'), or the literal 'full_balance' if the user means their entire/idle balance.",
+        },
+        reason: {
+          type: "string",
+          description: "For 'unsupported': one sentence on why this can't be handled (e.g. no hedging venue yet).",
+        },
       },
-      reason: {
-        type: "string",
-        description: "For 'unsupported': one sentence on why this can't be handled (e.g. no hedging venue yet).",
-      },
+      required: ["type"],
     },
-    required: ["type"],
   },
 };
 
 export async function parseIntentWithClaude(message: string): Promise<ParsedIntent> {
-  if (!client) throw new AnthropicNotConfiguredError();
+  if (!client) throw new LlmNotConfiguredError();
 
-  const response = await client.messages.create({
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 300,
-    system:
-      "You extract structured financial intents for Candor, an AI agent on X Layer. " +
-      "Supported actions are ONLY: 'swap' (token A to token B) and 'vault_deposit' (deposit a stablecoin into a yield vault). " +
-      "Anything else (hedging, derivatives, lending, staking, cross-chain, etc.) must be classified as 'unsupported' with a one-sentence reason — never invent an action type outside the two supported ones.",
-    messages: [{ role: "user", content: message }],
+    messages: [
+      {
+        role: "system",
+        content:
+          "You extract structured financial intents for Candor, an AI agent on X Layer. " +
+          "Supported actions are ONLY: 'swap' (token A to token B) and 'vault_deposit' (deposit a stablecoin into a yield vault). " +
+          "Anything else (hedging, derivatives, lending, staking, cross-chain, etc.) must be classified as 'unsupported' with a one-sentence reason — never invent an action type outside the two supported ones.",
+      },
+      { role: "user", content: message },
+    ],
     tools: [PARSE_INTENT_TOOL],
-    tool_choice: { type: "tool", name: "parsed_intent" },
+    tool_choice: { type: "function", function: { name: "parsed_intent" } },
   });
 
-  const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  if (!toolUse) return { type: "unsupported", reason: "model did not return a structured intent" };
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall) return { type: "unsupported", reason: "model did not return a structured intent" };
 
-  const input = toolUse.input as Record<string, string>;
+  const input = JSON.parse(toolCall.function.arguments) as Record<string, string>;
   if (input.type === "swap" && input.fromTokenSymbol && input.toTokenSymbol && input.amountHuman) {
     return {
       type: "swap",
@@ -93,21 +102,24 @@ export async function parseIntentWithClaude(message: string): Promise<ParsedInte
 // its own numbers.
 // ---------------------------------------------------------------------------
 
-const RISK_VERDICT_TOOL: Anthropic.Tool = {
-  name: "risk_verdict",
-  description: "Your risk judgment on this financial action, given the computed risk features.",
-  input_schema: {
-    type: "object",
-    properties: {
-      verdict: { type: "string", enum: ["EXECUTE", "EXECUTE_SMALLER", "WAIT", "REJECT"] },
-      riskScore: { type: "integer", minimum: 0, maximum: 100 },
-      rationale: { type: "string", description: "One to two plain-English sentences the user will read directly." },
-      suggestedFractionOfRequestedSize: {
-        type: "number",
-        description: "Only for EXECUTE_SMALLER: fraction (0-1) of the requested size you'd approve instead.",
+const RISK_VERDICT_TOOL: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "risk_verdict",
+    description: "Your risk judgment on this financial action, given the computed risk features.",
+    parameters: {
+      type: "object",
+      properties: {
+        verdict: { type: "string", enum: ["EXECUTE", "EXECUTE_SMALLER", "WAIT", "REJECT"] },
+        riskScore: { type: "integer", minimum: 0, maximum: 100 },
+        rationale: { type: "string", description: "One to two plain-English sentences the user will read directly." },
+        suggestedFractionOfRequestedSize: {
+          type: "number",
+          description: "Only for EXECUTE_SMALLER: fraction (0-1) of the requested size you'd approve instead.",
+        },
       },
+      required: ["verdict", "riskScore", "rationale"],
     },
-    required: ["verdict", "riskScore", "rationale"],
   },
 };
 
@@ -122,18 +134,21 @@ export async function judgeRiskWithClaude(
   features: RiskFeatures,
   context: { actionSummary: string; userMessage: string }
 ): Promise<LlmVerdictResult> {
-  if (!client) throw new AnthropicNotConfiguredError();
+  if (!client) throw new LlmNotConfiguredError();
 
-  const response = await client.messages.create({
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 400,
-    system:
-      "You are Candor's risk adjudicator. You are shown ONLY deterministic, already-computed risk features — " +
-      "never invent numbers not given to you. Your job is to decide whether this financial action should proceed " +
-      "as requested (EXECUTE), proceed at reduced size (EXECUTE_SMALLER), wait for better conditions (WAIT), or be " +
-      "refused (REJECT). You are allowed and expected to say no when warranted — a user trusts you more, not less, " +
-      "for pushing back on a bad trade. Be concise and specific in your rationale; the user reads it directly.",
     messages: [
+      {
+        role: "system",
+        content:
+          "You are Candor's risk adjudicator. You are shown ONLY deterministic, already-computed risk features — " +
+          "never invent numbers not given to you. Your job is to decide whether this financial action should proceed " +
+          "as requested (EXECUTE), proceed at reduced size (EXECUTE_SMALLER), wait for better conditions (WAIT), or be " +
+          "refused (REJECT). You are allowed and expected to say no when warranted — a user trusts you more, not less, " +
+          "for pushing back on a bad trade. Be concise and specific in your rationale; the user reads it directly.",
+      },
       {
         role: "user",
         content:
@@ -143,15 +158,15 @@ export async function judgeRiskWithClaude(
       },
     ],
     tools: [RISK_VERDICT_TOOL],
-    tool_choice: { type: "tool", name: "risk_verdict" },
+    tool_choice: { type: "function", function: { name: "risk_verdict" } },
   });
 
-  const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  if (!toolUse) {
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall) {
     return { verdict: "WAIT", riskScore: 50, rationale: "Model did not return a verdict; defaulting to caution.", suggestedFraction: null };
   }
 
-  const input = toolUse.input as {
+  const input = JSON.parse(toolCall.function.arguments) as {
     verdict: VerdictType;
     riskScore: number;
     rationale: string;

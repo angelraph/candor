@@ -56,7 +56,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
         )}
         {verdict.source === "llm" && (
           <span className="ml-1.5 text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
-            claude adjudicated
+            ai adjudicated
           </span>
         )}
       </p>
