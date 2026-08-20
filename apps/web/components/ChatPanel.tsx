@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useAccount, usePublicClient, useSendTransaction, useWriteContract } from "wagmi";
+import type { Hash } from "viem";
 import type { ConfirmCard } from "@candor/shared";
-import { postIntent, finalizeIntent, getLedgerStatus, ApiError, type LedgerStatusResult } from "@/lib/api-client";
+import { postIntent, finalizeIntent, ApiError } from "@/lib/api-client";
 import { ERC20_ABI } from "@/lib/erc20-abi";
 import { describeTxError } from "@/lib/describe-error";
 import { ConfirmCardView } from "./ConfirmCardView";
+
+interface LedgerStatusResult {
+  status: "unconfigured" | "pending" | "confirmed" | "failed";
+  txHash: string | null;
+  error: string | null;
+}
 
 const EXAMPLE_PROMPTS = [
   "swap 10 USDT to ETH",
@@ -30,20 +37,35 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ txHash: string | null; anchored: boolean } | null>(null);
   const [ledgerStatus, setLedgerStatus] = useState<LedgerStatusResult | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  function pollLedgerStatus(intentHash: string) {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const status = await getLedgerStatus(intentHash).catch(() => null);
-      if (!status) return;
-      setLedgerStatus(status);
-      if (status.status === "confirmed" || status.status === "failed" || status.status === "unconfigured") {
-        if (pollRef.current) clearInterval(pollRef.current);
-      }
-    }, 2000);
+  // The ledger-anchor tx is submitted server-side (see finalizeIntent) but
+  // confirmed here in the browser — same publicClient already used to track
+  // the user's own swap/deposit tx below. No backend status endpoint to poll:
+  // a serverless function can't keep tracking a tx after its response is
+  // sent, so the frontend that's already watching chain state does it once
+  // instead.
+  function watchLedgerAnchor(ledgerTxHash: Hash | null) {
+    if (!ledgerTxHash || !publicClient) {
+      setLedgerStatus({ status: "unconfigured", txHash: null, error: null });
+      return;
+    }
+    setLedgerStatus({ status: "pending", txHash: ledgerTxHash, error: null });
+    publicClient
+      .waitForTransactionReceipt({ hash: ledgerTxHash })
+      .then((receipt) => {
+        setLedgerStatus({
+          status: receipt.status === "success" ? "confirmed" : "failed",
+          txHash: ledgerTxHash,
+          error: receipt.status === "success" ? null : "transaction reverted",
+        });
+      })
+      .catch((err) => {
+        setLedgerStatus({
+          status: "failed",
+          txHash: ledgerTxHash,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
   }
 
   async function handleSend() {
@@ -67,8 +89,8 @@ export function ChatPanel() {
     setBusy(decision);
     setError(null);
     try {
-      const { tx } = await finalizeIntent(confirmCard.intentHash, decision);
-      pollLedgerStatus(confirmCard.intentHash);
+      const { tx, ledgerTxHash } = await finalizeIntent(confirmCard.intentHash, decision, confirmCard.token);
+      watchLedgerAnchor(ledgerTxHash as Hash | null);
 
       if (!tx) {
         setResult({ txHash: null, anchored: true });

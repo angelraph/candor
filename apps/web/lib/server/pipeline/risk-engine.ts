@@ -1,6 +1,6 @@
 import type { Action, Quote, RiskFeatures, RiskVerdict, VaultState } from "@candor/shared";
-import { judgeRiskWithClaude } from "./agent-llm.js";
-import { resolveAddress } from "../integrations/token-registry.js";
+import { judgeRiskWithClaude } from "./agent-llm";
+import { resolveAddress } from "../integrations/token-registry";
 
 // Rule-engine thresholds. Deliberately conservative and documented, since
 // these are the hard safety floor even when the LLM is unavailable.
@@ -64,7 +64,7 @@ export function computeVaultDepositRiskFeatures(params: {
 
 /** Deterministic pass. Returns a verdict only for the clear-cut cases (either
  *  clearly safe, or a hard-floor rejection) — everything in between returns
- *  `null` so the pipeline escalates to Claude for a reasoned judgment. */
+ *  `null` so the pipeline escalates to the LLM for a reasoned judgment. */
 export function ruleVerdict(features: RiskFeatures): RiskVerdict | null {
   if (features.priceImpactBps >= HARD_REJECT_IMPACT_BPS) {
     return {

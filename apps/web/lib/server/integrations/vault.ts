@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
-import { config } from "../config.js";
-import { publicClient } from "./viem-clients.js";
+import { config } from "../config";
+import { publicClient } from "./viem-clients";
 import type { VaultState } from "@candor/shared";
 
 const RWA_VAULT_ABI = [
@@ -27,7 +27,7 @@ const RWA_VAULT_ABI = [
 
 export class VaultNotConfiguredError extends Error {
   constructor() {
-    super("RWA_VAULT_ADDRESS is not configured — deploy contracts and set apps/api/.env first");
+    super("RWA_VAULT_ADDRESS is not configured — deploy contracts and set the env first");
     this.name = "VaultNotConfiguredError";
   }
 }

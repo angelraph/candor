@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { publicClient } from "./viem-clients.js";
+import { publicClient } from "./viem-clients";
 
 const ERC20_ABI = [
   {

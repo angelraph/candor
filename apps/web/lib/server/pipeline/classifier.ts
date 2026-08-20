@@ -1,12 +1,12 @@
 import { parseUnits } from "viem";
-import { resolveSymbol } from "../integrations/token-registry.js";
+import { resolveSymbol } from "../integrations/token-registry";
 
 /**
  * Deterministic, in-process, no-network intent classifier — the fast path.
  * Resolves the common phrasings from the demo script in well under 50ms so
  * they never touch the LLM. Anything it doesn't confidently match returns
- * `null`, and the pipeline falls back to Claude tool-calling (the slow path)
- * instead of guessing.
+ * `null`, and the pipeline falls back to the LLM (the slow path) instead of
+ * guessing.
  */
 
 export type FastPathAmount = { kind: "exact"; wei: string } | { kind: "full_balance" };

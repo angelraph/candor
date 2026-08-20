@@ -1,6 +1,9 @@
 import type { ConfirmCard, LedgerStats } from "@candor/shared";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
+// The API now lives in this same Next.js app (app/api/*), so an empty base
+// means "same origin" — no separate host, no CORS, nothing to misconfigure.
+// Only set NEXT_PUBLIC_API_BASE_URL if the API is ever split back out.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 export class ApiError extends Error {
   constructor(
@@ -31,26 +34,18 @@ export function postIntent(params: { message: string; userAddress: string; chain
 
 export interface FinalizeResult {
   tx: { to: string; data: string; value: string; gas: string } | null;
+  ledgerTxHash: string | null;
 }
 
 export function finalizeIntent(
   intentHash: string,
-  decision: "confirm" | "override" | "dismiss"
+  decision: "confirm" | "override" | "dismiss",
+  token: string
 ): Promise<FinalizeResult> {
   return request<FinalizeResult>(`/api/intent/${intentHash}/finalize`, {
     method: "POST",
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({ decision, token }),
   });
-}
-
-export interface LedgerStatusResult {
-  status: "unconfigured" | "pending" | "confirmed" | "failed";
-  txHash: string | null;
-  error: string | null;
-}
-
-export function getLedgerStatus(intentHash: string): Promise<LedgerStatusResult> {
-  return request<LedgerStatusResult>(`/api/intent/${intentHash}/ledger-status`);
 }
 
 export function getTrackRecord(): Promise<LedgerStats> {

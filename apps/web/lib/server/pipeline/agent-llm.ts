@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { config } from "../config.js";
+import { config } from "../config";
 import type { RiskFeatures, VerdictType } from "@candor/shared";
 
 // Fast, cheap model — deliberately not a large/slow one. The slow path is

@@ -145,6 +145,11 @@ export const ConfirmCardSchema = z.object({
   evidenceHash: Bytes32Schema,
   preparedAt: z.number().int(),
   expiresAt: z.number().int(),
+  // Opaque signed token carrying this card's server-side state (prepared tx,
+  // who it's for) — there's no backend session store on serverless, so the
+  // browser must echo this back on /finalize instead of the server looking
+  // it up by intentHash. See apps/web/lib/server/pipeline/confirm-token.ts.
+  token: z.string(),
 });
 export type ConfirmCard = z.infer<typeof ConfirmCardSchema>;
 

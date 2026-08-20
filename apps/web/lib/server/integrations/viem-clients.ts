@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http, type Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { X_LAYER_MAINNET, X_LAYER_TESTNET } from "@candor/shared";
-import { config } from "../config.js";
+import { config } from "../config";
 
 function toViemChain(def: typeof X_LAYER_MAINNET | typeof X_LAYER_TESTNET): Chain {
   return {

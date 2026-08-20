@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
-import { config } from "../config.js";
-import { getAllTokens, OkxDexUnreachableError } from "./okx-dex.js";
-import { getTokenMetadata } from "./erc20.js";
+import { config } from "../config";
+import { getAllTokens, OkxDexUnreachableError } from "./okx-dex";
+import { getTokenMetadata } from "./erc20";
 
 export interface TokenInfo {
   symbol: string;
@@ -20,6 +20,11 @@ const MOCK_TOKENS: TokenInfo[] = [
   { symbol: "USDC", address: "0x0000000000000000000000000000000000000004", decimals: 6 },
 ];
 
+// Module-level caches double as a warm-instance optimization on Vercel (they
+// survive across invocations on the same lambda instance, though never
+// across instances) — harmless if they get reset by a cold start, since
+// they're just perf caches, not correctness-critical state like the old
+// confirm-card store was.
 let okxCache: { tokens: TokenInfo[]; fetchedAt: number } | null = null;
 let coreTokenCache: TokenInfo[] | null = null; // the vault's own asset token, resolved once on-chain
 const CACHE_TTL_MS = 5 * 60_000;

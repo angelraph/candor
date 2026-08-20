@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
-import { publicClient } from "../integrations/viem-clients.js";
-import * as okxDex from "../integrations/okx-dex.js";
-import { previewVaultDeposit } from "../integrations/vault.js";
+import { publicClient } from "../integrations/viem-clients";
+import * as okxDex from "../integrations/okx-dex";
+import { previewVaultDeposit } from "../integrations/vault";
 import type { Quote } from "@candor/shared";
 
 export interface PreparedTx {

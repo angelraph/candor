@@ -1,17 +1,19 @@
 import { parseUnits, type Hex } from "viem";
 import type { Action, ConfirmCard, IntentRequest, RiskVerdict } from "@candor/shared";
-import { config } from "../config.js";
-import { classifyFastPath, type FastPathIntent } from "./classifier.js";
-import { parseIntentWithClaude } from "./agent-llm.js";
-import { computeSwapRiskFeatures, computeVaultDepositRiskFeatures, computeVerdict } from "./risk-engine.js";
-import { simulateSwap, simulateVaultDeposit, type PreparedTx } from "./simulate.js";
-import { readVaultState, VaultNotConfiguredError } from "../integrations/vault.js";
-import { resolveSymbol, resolveAddress } from "../integrations/token-registry.js";
-import { getBalance } from "../integrations/erc20.js";
-import { computeEvidenceHash, computeIntentHash } from "../utils/hash.js";
-import { Stopwatch } from "../utils/latency.js";
-import { putConfirmCard, consumeConfirmCard } from "./confirm-card-store.js";
-import { anchorVerdict, getLedgerStatus } from "../integrations/ledger.js";
+import { config } from "../config";
+import { classifyFastPath, type FastPathIntent } from "./classifier";
+import { parseIntentWithClaude } from "./agent-llm";
+import { computeSwapRiskFeatures, computeVaultDepositRiskFeatures, computeVerdict } from "./risk-engine";
+import { simulateSwap, simulateVaultDeposit, type PreparedTx } from "./simulate";
+import { readVaultState, VaultNotConfiguredError } from "../integrations/vault";
+import { resolveSymbol, resolveAddress } from "../integrations/token-registry";
+import { getBalance } from "../integrations/erc20";
+import { computeEvidenceHash, computeIntentHash } from "../utils/hash";
+import { Stopwatch } from "../utils/latency";
+import { signConfirmToken, verifyConfirmToken, ConfirmCardExpiredError } from "./confirm-token";
+import { anchorVerdict } from "../integrations/ledger";
+
+export { ConfirmCardExpiredError };
 
 // Stale-quote guard: re-quote if the user takes longer than this to confirm.
 // 20s was too tight in practice — it only leaves time to glance at the card,
@@ -29,7 +31,7 @@ export class UnsupportedIntentError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: classify — fast path first, Claude only if it returns null.
+// Step 1: classify — fast path first, LLM only if it returns null.
 // ---------------------------------------------------------------------------
 
 async function resolveAction(
@@ -177,57 +179,67 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
   }
 
   const now = Date.now();
-  const confirmCard: ConfirmCard = {
+  const intentHash = computeIntentHash({ userAddress, chainId: req.chainId, action, nonce: now });
+  const evidenceHash = computeEvidenceHash(verdict);
+  const expiresAt = now + CONFIRM_CARD_TTL_MS;
+  const preparedTx = verdict.verdict === "REJECT" ? null : tx;
+
+  const token = signConfirmToken({
+    intentHash,
+    evidenceHash,
+    verdictType: verdict.verdict,
+    riskScore: verdict.riskScore,
+    userAddress,
+    tx: preparedTx,
+    expiresAt,
+  });
+
+  return {
     action,
     quote,
     vaultState,
     verdict,
     latency: stopwatch.breakdown(),
-    intentHash: computeIntentHash({ userAddress, chainId: req.chainId, action, nonce: now }),
-    evidenceHash: computeEvidenceHash(verdict),
+    intentHash,
+    evidenceHash,
     preparedAt: now,
-    expiresAt: now + CONFIRM_CARD_TTL_MS,
+    expiresAt,
+    token,
   };
-
-  putConfirmCard(confirmCard.intentHash, { confirmCard, tx: verdict.verdict === "REJECT" ? null : tx, userAddress });
-
-  return confirmCard;
 }
 
 // ---------------------------------------------------------------------------
 // Step 3: finalize — called once the user acts on the confirm card. Anchors
 // the verdict to ReasoningLedger with the correct `overrode` flag (only now
 // knowable) and, for confirm/override, returns the prepared tx for signing.
+// The card's state comes from the signed token, not server-side storage —
+// see confirm-token.ts for why.
 // ---------------------------------------------------------------------------
 
 export type FinalizeDecision = "confirm" | "override" | "dismiss";
 
-export class ConfirmCardExpiredError extends Error {
-  constructor() {
-    super("This confirm card expired or was already finalized. Ask again for a fresh one.");
-    this.name = "ConfirmCardExpiredError";
-  }
-}
+export async function finalizeIntent(
+  intentHash: string,
+  decision: FinalizeDecision,
+  token: string
+): Promise<{ tx: PreparedTx | null; ledgerTxHash: Hex | null }> {
+  const payload = verifyConfirmToken(token);
+  if (payload.intentHash !== intentHash) throw new ConfirmCardExpiredError();
 
-export function finalizeIntent(intentHash: string, decision: FinalizeDecision): { tx: PreparedTx | null } {
-  const entry = consumeConfirmCard(intentHash);
-  if (!entry) throw new ConfirmCardExpiredError();
+  const overrode = decision === "override" && payload.verdictType !== "EXECUTE";
 
-  const overrode = decision === "override" && entry.confirmCard.verdict.verdict !== "EXECUTE";
-
-  anchorVerdict({
-    intentHash: entry.confirmCard.intentHash as Hex,
-    evidenceHash: entry.confirmCard.evidenceHash as Hex,
-    verdict: entry.confirmCard.verdict.verdict,
-    riskScore: entry.confirmCard.verdict.riskScore,
+  const ledgerTxHash = await anchorVerdict({
+    intentHash: payload.intentHash as Hex,
+    evidenceHash: payload.evidenceHash as Hex,
+    verdict: payload.verdictType,
+    riskScore: payload.riskScore,
     overrode,
-    userAddress: entry.userAddress as Hex,
+    userAddress: payload.userAddress as Hex,
+  }).catch((err) => {
+    console.error(`[ledger] failed to anchor verdict for ${payload.intentHash}:`, err);
+    return null;
   });
 
-  if (decision === "dismiss") return { tx: null };
-  return { tx: entry.tx };
-}
-
-export function ledgerStatus(intentHash: string) {
-  return getLedgerStatus(intentHash);
+  if (decision === "dismiss") return { tx: null, ledgerTxHash };
+  return { tx: payload.tx, ledgerTxHash };
 }

@@ -1,17 +1,13 @@
-import "dotenv/config";
 import { z } from "zod";
 import { AddressSchema, isSupportedChainId } from "@candor/shared";
 
-/** dotenv leaves unset-but-present `KEY=` lines as `""`, not undefined —
- *  treat blank strings as absent so `.optional()` actually applies to them. */
+/** Blank env values (e.g. an unset-but-present Vercel var) should be treated
+ *  as absent so `.optional()` actually applies to them. */
 function optionalEnv<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 }
 
 const EnvSchema = z.object({
-  PORT: z.coerce.number().int().default(8787),
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-
   CHAIN_ID: z.coerce.number().int().refine(isSupportedChainId, {
     message: "CHAIN_ID must be 1952 (X Layer testnet) or 196 (X Layer mainnet)",
   }),
@@ -29,13 +25,19 @@ const EnvSchema = z.object({
   OKX_DEX_BASE_URL: z.string().url().default("https://web3.okx.com"),
 
   OPENAI_API_KEY: optionalEnv(z.string()),
+
+  // Signs the confirm-card token handed back to the browser between
+  // POST /api/intent and POST /api/intent/:hash/finalize. There's no
+  // server-side session store on Vercel's serverless runtime (no guarantee
+  // two requests hit the same instance), so the card's state travels in the
+  // token itself instead of a backend Map; this secret is what keeps the
+  // browser from being able to forge or edit it.
+  CONFIRM_CARD_SECRET: z.string().min(32, "CONFIRM_CARD_SECRET must be at least 32 characters"),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
-  console.error("Invalid environment configuration:");
-  console.error(parsed.error.flatten().fieldErrors);
-  process.exit(1);
+  throw new Error(`Invalid environment configuration: ${JSON.stringify(parsed.error.flatten().fieldErrors)}`);
 }
 
 const env = parsed.data;
@@ -46,10 +48,6 @@ const env = parsed.data;
  * obvious from a log line which mode a given request ran in.
  */
 export const config = {
-  port: env.PORT,
-  nodeEnv: env.NODE_ENV,
-  isProd: env.NODE_ENV === "production",
-
   chainId: env.CHAIN_ID,
   rpcUrl: env.RPC_URL,
 
@@ -74,6 +72,8 @@ export const config = {
 
   llmApiKey: env.OPENAI_API_KEY ?? null,
   llmConfigured: Boolean(env.OPENAI_API_KEY),
+
+  confirmCardSecret: env.CONFIRM_CARD_SECRET,
 } as const;
 
 export type Config = typeof config;
