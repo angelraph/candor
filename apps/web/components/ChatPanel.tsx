@@ -114,7 +114,7 @@ export function ChatPanel() {
         // to the next step as if it had succeeded.
         const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
         if (approveReceipt.status !== "success") {
-          throw new Error("The approval transaction failed on-chain — nothing was swapped/deposited.");
+          throw new Error("The approval transaction failed on-chain. Nothing was swapped or deposited.");
         }
       }
 
@@ -126,7 +126,7 @@ export function ChatPanel() {
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status !== "success") {
         throw new Error(
-          "The transaction was mined but reverted on-chain — no funds moved. This can happen if the quote went stale or the pool state changed; try again."
+          "The transaction was mined but reverted, so no funds moved. Usually that means the quote went stale or the pool state changed in the meantime. Try again."
         );
       }
 

@@ -31,7 +31,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
           <p>
             Swap <span className="font-mono">{action.params.amountWei}</span> ({short(action.params.fromToken)}) →{" "}
             <span className="font-mono">{quote?.expectedOutWei ?? "…"}</span> ({short(action.params.toToken)})
-            {quote?.mock && <span className="ml-2 text-[11px] text-warn">MOCK QUOTE — no OKX DEX key configured</span>}
+            {quote?.mock && <span className="ml-2 text-[11px] text-warn">MOCK QUOTE (no OKX DEX key configured)</span>}
           </p>
         ) : (
           <p>
@@ -39,7 +39,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
             into vault {short(action.params.vaultAddress)}
             {vaultState && (
               <span className="ml-1 text-black/50 dark:text-white/50">
-                — {(vaultState.aprBps / 100).toFixed(1)}% APR, {(vaultState.utilizationBps / 100).toFixed(0)}% full
+                ({(vaultState.aprBps / 100).toFixed(1)}% APR, {(vaultState.utilizationBps / 100).toFixed(0)}% full)
               </span>
             )}
           </p>
@@ -68,7 +68,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
       )}
 
       {expired ? (
-        <p className="mt-4 text-sm text-danger">This quote has gone stale — ask again for a fresh one.</p>
+        <p className="mt-4 text-sm text-danger">This quote is stale now. Just ask again for a fresh one.</p>
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {isClean ? (
@@ -116,7 +116,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
       )}
 
       <p className="mt-3 font-mono text-[10px] text-black/30 dark:text-white/30">
-        intent {card.intentHash.slice(0, 10)}… — every verdict here gets anchored on ReasoningLedger, whether you act on it or not.
+        intent {card.intentHash.slice(0, 10)}… · this verdict gets anchored on ReasoningLedger either way, acted on or not.
       </p>
     </div>
   );

@@ -7,19 +7,19 @@ export function describeTxError(err: unknown): string {
   const lower = message.toLowerCase();
 
   if (lower.includes("user rejected") || lower.includes("user denied")) {
-    return "You rejected the signature request — nothing was sent.";
+    return "You rejected the signature request, so nothing was sent.";
   }
   if (lower.includes("insufficient funds")) {
-    return "Insufficient balance to cover this transaction (including gas).";
+    return "Your balance doesn't cover this transaction plus gas.";
   }
   if (lower.includes("insufficient allowance") || lower.includes("erc20insufficientallowance")) {
-    return "Token approval didn't go through in time — try again.";
+    return "The token approval didn't go through in time. Try again.";
   }
   if (lower.includes("nonce")) {
-    return "Transaction nonce conflict — if you have another pending transaction, wait for it to finish and try again.";
+    return "There's a conflicting pending transaction. Let it finish (or clear it) before trying again.";
   }
   if (lower.includes("gas required exceeds") || lower.includes("out of gas")) {
-    return "Transaction ran out of gas — this usually means the underlying call would have failed anyway.";
+    return "Ran out of gas. That usually means the underlying call would have failed anyway.";
   }
 
   // First line only, capped — viem errors often follow with call data/ABI

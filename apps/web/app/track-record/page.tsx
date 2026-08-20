@@ -21,8 +21,8 @@ export default function TrackRecordPage() {
       </Link>
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">Candor's Track Record</h1>
       <p className="mt-2 text-sm text-black/60 dark:text-white/50">
-        Every verdict Candor has ever issued, anchored on <code>ReasoningLedger</code> — not just the ones you
-        followed. This is read straight from the contract's aggregate counters, no indexer required.
+        Every verdict Candor has ever handed out lives on <code>ReasoningLedger</code>, including the ones nobody
+        followed. It's read straight off the contract's counters, no indexer in between.
       </p>
 
       {isLoading && <p className="mt-8 text-sm text-black/50">Loading…</p>}
@@ -64,8 +64,7 @@ export default function TrackRecordPage() {
 
           {data.totalVerdicts === 0 && (
             <p className="text-sm text-black/40 dark:text-white/40">
-              No verdicts anchored yet — either the ledger isn't deployed/configured, or nobody's asked Candor
-              anything yet.
+              Nothing anchored yet. Either the ledger isn't set up, or nobody's asked Candor anything yet.
             </p>
           )}
         </div>

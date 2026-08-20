@@ -66,7 +66,7 @@ export async function parseIntentWithClaude(message: string): Promise<ParsedInte
         content:
           "You extract structured financial intents for Candor, an AI agent on X Layer. " +
           "Supported actions are ONLY: 'swap' (token A to token B) and 'vault_deposit' (deposit a stablecoin into a yield vault). " +
-          "Anything else (hedging, derivatives, lending, staking, cross-chain, etc.) must be classified as 'unsupported' with a one-sentence reason — never invent an action type outside the two supported ones.",
+          "Anything else (hedging, derivatives, lending, staking, cross-chain, etc.) must be classified as 'unsupported' with a one-sentence reason, written plainly with no em dash, never invent an action type outside the two supported ones.",
       },
       { role: "user", content: message },
     ],
@@ -147,7 +147,8 @@ export async function judgeRiskWithClaude(
           "never invent numbers not given to you. Your job is to decide whether this financial action should proceed " +
           "as requested (EXECUTE), proceed at reduced size (EXECUTE_SMALLER), wait for better conditions (WAIT), or be " +
           "refused (REJECT). You are allowed and expected to say no when warranted — a user trusts you more, not less, " +
-          "for pushing back on a bad trade. Be concise and specific in your rationale; the user reads it directly.",
+          "for pushing back on a bad trade. Be concise and specific in your rationale; the user reads it directly. " +
+          "Write like a person talking, not like marketing copy: short plain sentences, no em dashes, no hedge-padding.",
       },
       {
         role: "user",

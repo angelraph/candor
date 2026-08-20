@@ -13,7 +13,13 @@ import { Stopwatch } from "../utils/latency.js";
 import { putConfirmCard, consumeConfirmCard } from "./confirm-card-store.js";
 import { anchorVerdict, getLedgerStatus } from "../integrations/ledger.js";
 
-const CONFIRM_CARD_TTL_MS = 20_000; // stale-quote guard — re-quote if the user takes longer than this to confirm
+// Stale-quote guard: re-quote if the user takes longer than this to confirm.
+// 20s was too tight in practice — it only leaves time to glance at the card,
+// not to actually read the risk rationale and decide. A minute gives a real
+// user room to read and click without the card dying under them; it's still
+// short enough to catch a genuinely stale swap price, and vault deposits
+// (fixed-APR, no slippage) don't need a tight window at all.
+const CONFIRM_CARD_TTL_MS = 60_000;
 
 export class UnsupportedIntentError extends Error {
   constructor(reason: string) {
@@ -198,7 +204,7 @@ export type FinalizeDecision = "confirm" | "override" | "dismiss";
 
 export class ConfirmCardExpiredError extends Error {
   constructor() {
-    super("This confirm card has expired or was already finalized — request a fresh quote");
+    super("This confirm card expired or was already finalized. Ask again for a fresh one.");
     this.name = "ConfirmCardExpiredError";
   }
 }

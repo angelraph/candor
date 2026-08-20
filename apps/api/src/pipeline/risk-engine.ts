@@ -70,7 +70,7 @@ export function ruleVerdict(features: RiskFeatures): RiskVerdict | null {
     return {
       verdict: "REJECT",
       riskScore: 95,
-      rationale: `Price impact of ${(features.priceImpactBps / 100).toFixed(1)}% is far outside safe bounds — rejecting automatically regardless of size.`,
+      rationale: `Price impact of ${(features.priceImpactBps / 100).toFixed(1)}% is way outside safe bounds. Rejecting automatically, regardless of size.`,
       suggestedAmountWei: null,
       source: "rule",
       features,
@@ -81,7 +81,7 @@ export function ruleVerdict(features: RiskFeatures): RiskVerdict | null {
     return {
       verdict: "REJECT",
       riskScore: 92,
-      rationale: `This pool is at ${(features.poolUtilizationBps! / 100).toFixed(0)}% utilization — too close to capacity to safely accept more deposits.`,
+      rationale: `This pool is at ${(features.poolUtilizationBps! / 100).toFixed(0)}% utilization, too close to capacity to safely take more deposits.`,
       suggestedAmountWei: null,
       source: "rule",
       features,
@@ -101,7 +101,7 @@ export function ruleVerdict(features: RiskFeatures): RiskVerdict | null {
     return {
       verdict: "EXECUTE",
       riskScore,
-      rationale: `Small size ($${features.requestedSizeUsd.toFixed(0)}) and low price impact (${(features.priceImpactBps / 100).toFixed(2)}%) — within safe bounds, no further review needed.`,
+      rationale: `Small size ($${features.requestedSizeUsd.toFixed(0)}) and low price impact (${(features.priceImpactBps / 100).toFixed(2)}%), well within safe bounds. No further review needed.`,
       suggestedAmountWei: null,
       source: "rule",
       features,
