@@ -3,17 +3,18 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
+/* Committed to OKX's black + off-white pairing (sampled from
+   okx.com/agent-tradekit) rather than following system light/dark
+   preference — see darkMode: "class" in tailwind.config.ts. */
 body {
-  background: var(--candor-bg, #f7f6f2);
-  color: var(--candor-fg, #0b0e14);
+  background: #000000;
+  color: #fafafa;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    --candor-bg: #0b0e14;
-    --candor-fg: #f2f1ec;
-  }
+::selection {
+  background: #bcff2f;
+  color: #000000;
 }

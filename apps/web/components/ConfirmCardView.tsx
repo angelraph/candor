@@ -75,7 +75,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
             <button
               onClick={onConfirm}
               disabled={busy !== null}
-              className="rounded-full bg-candor-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-candor-600 disabled:opacity-50"
+              className="rounded-full bg-candor-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-candor-600 disabled:opacity-50"
             >
               {busy === "confirm" ? "Confirming…" : "Confirm"}
             </button>
@@ -84,7 +84,7 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
               <button
                 onClick={onConfirm}
                 disabled={busy !== null}
-                className="rounded-full bg-candor-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-candor-600 disabled:opacity-50"
+                className="rounded-full bg-candor-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-candor-600 disabled:opacity-50"
               >
                 {busy === "confirm" ? "Confirming…" : "Accept Candor's suggestion"}
               </button>

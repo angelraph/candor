@@ -25,7 +25,7 @@ export default function TrackRecordPage() {
         followed. It's read straight off the contract's counters, no indexer in between.
       </p>
 
-      {isLoading && <p className="mt-8 text-sm text-black/50">Loading…</p>}
+      {isLoading && <p className="mt-8 text-sm text-black/50 dark:text-white/50">Loading…</p>}
       {error && <p className="mt-8 text-sm text-danger">Couldn't reach the ledger. Is the API running?</p>}
 
       {data && (
