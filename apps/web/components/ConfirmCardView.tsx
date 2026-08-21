@@ -31,7 +31,9 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
           <p>
             Swap <span className="font-mono">{action.params.amountWei}</span> ({short(action.params.fromToken)}) →{" "}
             <span className="font-mono">{quote?.expectedOutWei ?? "…"}</span> ({short(action.params.toToken)})
-            {quote?.mock && <span className="ml-2 text-[11px] text-warn">MOCK QUOTE (no OKX DEX key configured)</span>}
+            {quote?.mock && (
+              <span className="ml-2 text-[11px] text-warn">MOCK QUOTE (no live DEX routing on this network)</span>
+            )}
           </p>
         ) : (
           <p>

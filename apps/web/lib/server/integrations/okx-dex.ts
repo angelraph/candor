@@ -10,12 +10,10 @@ import type { Quote } from "@candor/shared";
  * Runs in MOCK MODE (clearly logged, never silent) when credentials aren't
  * configured yet — this is deliberate so the rest of the pipeline can be
  * built and tested against realistic-shaped responses before OKX approves
- * API access, per the plan's mitigation for that exact risk. It's also what
- * naturally happens on X Layer testnet even with real credentials: OKX's
- * aggregator has no real liquidity to quote there, so testnet swaps run
- * against synthetic quotes the same way an unconfigured key would — that's
- * expected, not a bug, since testnet exists to test the flow, not to move
- * real value.
+ * API access, per the plan's mitigation for that exact risk. Attempts a
+ * live call on every configured chain (including X Layer testnet) rather
+ * than assuming a chain has no real liquidity — OKX's own response is what
+ * decides that, not a guess made here.
  */
 
 const OKX_DEX_PATH_PREFIX = "/api/v6/dex/aggregator";
@@ -58,11 +56,6 @@ export class OkxDexUnreachableError extends Error {
     this.name = "OkxDexUnreachableError";
   }
 }
-
-// X Layer testnet has no real liquidity for OKX's aggregator to route
-// through, so it always gets a synthetic quote regardless of credentials —
-// only mainnet ever attempts a live OKX call.
-const LIVE_QUOTE_CHAIN_ID = 196;
 
 // Swap/quote calls have no sensible fallback (they ARE the thing being
 // requested), so they get more patience. all-tokens feeds the classifier's
@@ -144,6 +137,24 @@ function mockQuote(chainId: number, fromAmountWei: string): OkxQuoteResponse {
   };
 }
 
+// Verified live, not assumed: a real signed call to OKX's aggregator for
+// chainIndex=1952 (X Layer testnet) returns `code 50026: System error` even
+// for a same-token, real-address, on-chain-verified pair — not an
+// "unsupported chain" rejection, a generic failure, and it doesn't matter
+// which tokens are involved. OKX simply has no working routing data for
+// this chain. Mainnet (196) is the only chain this ever attempts live.
+const LIVE_QUOTE_CHAIN_ID = 196;
+
+function liveQuotesAvailable(chainId: number): boolean {
+  return config.okxDexConfigured && chainId === LIVE_QUOTE_CHAIN_ID;
+}
+
+function mockReason(chainId: number): string {
+  return config.okxDexConfigured
+    ? `chain ${chainId} has no live OKX DEX routing (only mainnet does)`
+    : "OKX_DEX_API_KEY not set";
+}
+
 export interface GetQuoteParams {
   chainId: number;
   fromTokenAddress: string;
@@ -157,8 +168,8 @@ export interface DexQuoteResult extends Quote {
 }
 
 export async function getAllTokens(chainId: number): Promise<OkxTokenInfo[]> {
-  if (!config.okxDexConfigured || chainId !== LIVE_QUOTE_CHAIN_ID) {
-    console.warn(`[okx-dex] mock mode for chain ${chainId} — returning empty token list`);
+  if (!liveQuotesAvailable(chainId)) {
+    console.warn(`[okx-dex] mock mode for chain ${chainId} (${mockReason(chainId)}) — returning empty token list`);
     return [];
   }
   return okxRequest<OkxTokenInfo[]>(
@@ -173,8 +184,8 @@ export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> 
   let data: OkxQuoteResponse;
   let mock = false;
 
-  if (!config.okxDexConfigured || params.chainId !== LIVE_QUOTE_CHAIN_ID) {
-    console.warn(`[okx-dex] mock mode for chain ${params.chainId} — returning synthetic quote`);
+  if (!liveQuotesAvailable(params.chainId)) {
+    console.warn(`[okx-dex] mock mode for chain ${params.chainId} (${mockReason(params.chainId)}) — returning synthetic quote`);
     data = mockQuote(params.chainId, params.amountWei);
     mock = true;
   } else {
@@ -217,8 +228,8 @@ export interface DexSwapTx {
 }
 
 export async function getSwapTransaction(params: GetSwapTxParams): Promise<DexSwapTx> {
-  if (!config.okxDexConfigured || params.chainId !== LIVE_QUOTE_CHAIN_ID) {
-    console.warn(`[okx-dex] mock mode for chain ${params.chainId} — returning non-executable placeholder calldata`);
+  if (!liveQuotesAvailable(params.chainId)) {
+    console.warn(`[okx-dex] mock mode for chain ${params.chainId} (${mockReason(params.chainId)}) — returning non-executable placeholder calldata`);
     return { to: params.toTokenAddress, data: "0x", value: "0", gas: "180000", mock: true };
   }
 
