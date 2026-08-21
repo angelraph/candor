@@ -1,6 +1,6 @@
 import { parseUnits, type Hex } from "viem";
 import type { Action, ConfirmCard, IntentRequest, RiskVerdict } from "@candor/shared";
-import { config } from "../config";
+import { config, getChainConfig } from "../config";
 import { classifyFastPath, type FastPathIntent } from "./classifier";
 import { parseIntentWithClaude } from "./agent-llm";
 import { computeSwapRiskFeatures, computeVaultDepositRiskFeatures, computeVerdict } from "./risk-engine";
@@ -14,6 +14,13 @@ import { signConfirmToken, verifyConfirmToken, ConfirmCardExpiredError } from ".
 import { anchorVerdict } from "../integrations/ledger";
 
 export { ConfirmCardExpiredError };
+
+export class UnsupportedChainError extends Error {
+  constructor(chainId: number) {
+    super(`Chain ${chainId} is not supported — use X Layer mainnet (196) or testnet (1952)`);
+    this.name = "UnsupportedChainError";
+  }
+}
 
 // Stale-quote guard: re-quote if the user takes longer than this to confirm.
 // 20s was too tight in practice — it only leaves time to glance at the card,
@@ -35,27 +42,28 @@ export class UnsupportedIntentError extends Error {
 // ---------------------------------------------------------------------------
 
 async function resolveAction(
+  chainId: number,
   message: string,
   userAddress: Hex,
   stopwatch: Stopwatch
 ): Promise<{ action: Action; requestedAmountWei: string }> {
-  const fast = await stopwatch.time("classify", () => classifyFastPath(message));
-  if (fast) return resolveFromFastPath(fast, userAddress);
+  const fast = await stopwatch.time("classify", () => classifyFastPath(chainId, message));
+  if (fast) return resolveFromFastPath(chainId, fast, userAddress);
 
   const parsed = await parseIntentWithClaude(message);
   if (parsed.type === "unsupported") throw new UnsupportedIntentError(parsed.reason);
 
   if (parsed.type === "swap") {
     const [from, to] = await Promise.all([
-      resolveSymbol(parsed.fromTokenSymbol),
-      resolveSymbol(parsed.toTokenSymbol),
+      resolveSymbol(chainId, parsed.fromTokenSymbol),
+      resolveSymbol(chainId, parsed.toTokenSymbol),
     ]);
     if (!from) throw new UnsupportedIntentError(`Unrecognized token symbol: ${parsed.fromTokenSymbol}`);
     if (!to) throw new UnsupportedIntentError(`Unrecognized token symbol: ${parsed.toTokenSymbol}`);
 
     const amountWei =
       parsed.amountHuman === "full_balance"
-        ? (await getBalance(from.address as Hex, userAddress)).toString()
+        ? (await getBalance(chainId, from.address as Hex, userAddress)).toString()
         : parseUnits(parsed.amountHuman, from.decimals).toString();
 
     return {
@@ -65,32 +73,34 @@ async function resolveAction(
   }
 
   // vault_deposit
-  const token = await resolveSymbol(parsed.assetTokenSymbol);
+  const token = await resolveSymbol(chainId, parsed.assetTokenSymbol);
   if (!token) throw new UnsupportedIntentError(`Unrecognized token symbol: ${parsed.assetTokenSymbol}`);
-  if (!config.contracts.rwaVault) throw new VaultNotConfiguredError();
+  const rwaVault = getChainConfig(chainId).contracts.rwaVault;
+  if (!rwaVault) throw new VaultNotConfiguredError();
 
   const amountWei =
     parsed.amountHuman === "full_balance"
-      ? (await getBalance(token.address as Hex, userAddress)).toString()
+      ? (await getBalance(chainId, token.address as Hex, userAddress)).toString()
       : parseUnits(parsed.amountHuman, token.decimals).toString();
 
   return {
     action: {
       type: "vault_deposit",
-      params: { vaultAddress: config.contracts.rwaVault, assetToken: token.address, amountWei },
+      params: { vaultAddress: rwaVault, assetToken: token.address, amountWei },
     },
     requestedAmountWei: amountWei,
   };
 }
 
 async function resolveFromFastPath(
+  chainId: number,
   fast: FastPathIntent,
   userAddress: Hex
 ): Promise<{ action: Action; requestedAmountWei: string }> {
   if (fast.type === "swap") {
     const amountWei =
       fast.amount.kind === "full_balance"
-        ? (await getBalance(fast.fromToken as Hex, userAddress)).toString()
+        ? (await getBalance(chainId, fast.fromToken as Hex, userAddress)).toString()
         : fast.amount.wei;
     return {
       action: {
@@ -101,15 +111,16 @@ async function resolveFromFastPath(
     };
   }
 
-  if (!config.contracts.rwaVault) throw new VaultNotConfiguredError();
+  const rwaVault = getChainConfig(chainId).contracts.rwaVault;
+  if (!rwaVault) throw new VaultNotConfiguredError();
   const amountWei =
     fast.amount.kind === "full_balance"
-      ? (await getBalance(fast.assetToken as Hex, userAddress)).toString()
+      ? (await getBalance(chainId, fast.assetToken as Hex, userAddress)).toString()
       : fast.amount.wei;
   return {
     action: {
       type: "vault_deposit",
-      params: { vaultAddress: config.contracts.rwaVault, assetToken: fast.assetToken, amountWei },
+      params: { vaultAddress: rwaVault, assetToken: fast.assetToken, amountWei },
     },
     requestedAmountWei: amountWei,
   };
@@ -120,10 +131,13 @@ async function resolveFromFastPath(
 // ---------------------------------------------------------------------------
 
 export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
+  if (!config.isSupportedChain(req.chainId)) throw new UnsupportedChainError(req.chainId);
+
   const stopwatch = new Stopwatch();
   const userAddress = req.userAddress as Hex;
+  const chainId = req.chainId;
 
-  const { action, requestedAmountWei } = await resolveAction(req.message, userAddress, stopwatch);
+  const { action, requestedAmountWei } = await resolveAction(chainId, req.message, userAddress, stopwatch);
 
   let quote: ConfirmCard["quote"] = null;
   let vaultState: ConfirmCard["vaultState"] = null;
@@ -133,6 +147,7 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
   if (action.type === "swap") {
     const sim = await stopwatch.time("quote", () =>
       simulateSwap({
+        chainId,
         fromToken: action.params.fromToken as Hex,
         toToken: action.params.toToken as Hex,
         amountWei: action.params.amountWei,
@@ -144,6 +159,7 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
     tx = sim.tx;
 
     const features = await computeSwapRiskFeatures({
+      chainId,
       fromTokenAddress: action.params.fromToken,
       amountWei: action.params.amountWei,
       quote: sim.quote,
@@ -152,11 +168,12 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
       computeVerdict(features, { action, userMessage: req.message, requestedAmountWei })
     );
   } else {
-    const state = await stopwatch.time("quote", () => readVaultState());
+    const state = await stopwatch.time("quote", () => readVaultState(chainId));
     vaultState = state;
     tx = (
       await stopwatch.time("simulate", () =>
         simulateVaultDeposit({
+          chainId,
           vaultAddress: action.params.vaultAddress as Hex,
           amountWei: action.params.amountWei,
           userAddress,
@@ -167,7 +184,7 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
     // Resolve the asset's real decimals from the registry rather than
     // assuming 6 — same class of bug as the swap path's USD sizing, fixed
     // the same way: never hardcode a token's decimals.
-    const assetInfo = await resolveAddress(action.params.assetToken);
+    const assetInfo = await resolveAddress(chainId, action.params.assetToken);
     const assetDecimals = assetInfo?.decimals ?? 6;
     const features = computeVaultDepositRiskFeatures({
       amountHuman: Number(action.params.amountWei) / 10 ** assetDecimals,
@@ -179,12 +196,13 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
   }
 
   const now = Date.now();
-  const intentHash = computeIntentHash({ userAddress, chainId: req.chainId, action, nonce: now });
+  const intentHash = computeIntentHash({ userAddress, chainId, action, nonce: now });
   const evidenceHash = computeEvidenceHash(verdict);
   const expiresAt = now + CONFIRM_CARD_TTL_MS;
   const preparedTx = verdict.verdict === "REJECT" ? null : tx;
 
   const token = signConfirmToken({
+    chainId,
     intentHash,
     evidenceHash,
     verdictType: verdict.verdict,
@@ -204,6 +222,7 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
     evidenceHash,
     preparedAt: now,
     expiresAt,
+    chainId,
     token,
   };
 }
@@ -212,8 +231,8 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
 // Step 3: finalize — called once the user acts on the confirm card. Anchors
 // the verdict to ReasoningLedger with the correct `overrode` flag (only now
 // knowable) and, for confirm/override, returns the prepared tx for signing.
-// The card's state comes from the signed token, not server-side storage —
-// see confirm-token.ts for why.
+// The card's state (including which chain it's for) comes from the signed
+// token, not server-side storage — see confirm-token.ts for why.
 // ---------------------------------------------------------------------------
 
 export type FinalizeDecision = "confirm" | "override" | "dismiss";
@@ -229,6 +248,7 @@ export async function finalizeIntent(
   const overrode = decision === "override" && payload.verdictType !== "EXECUTE";
 
   const ledgerTxHash = await anchorVerdict({
+    chainId: payload.chainId,
     intentHash: payload.intentHash as Hex,
     evidenceHash: payload.evidenceHash as Hex,
     verdict: payload.verdictType,
@@ -236,7 +256,7 @@ export async function finalizeIntent(
     overrode,
     userAddress: payload.userAddress as Hex,
   }).catch((err) => {
-    console.error(`[ledger] failed to anchor verdict for ${payload.intentHash}:`, err);
+    console.error(`[ledger] failed to anchor verdict for ${payload.intentHash} on chain ${payload.chainId}:`, err);
     return null;
   });
 

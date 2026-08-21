@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
-import { config } from "../config";
-import { publicClient } from "./viem-clients";
+import { getChainConfig } from "../config";
+import { getPublicClient } from "./viem-clients";
 import type { VaultState } from "@candor/shared";
 
 const RWA_VAULT_ABI = [
@@ -27,22 +27,28 @@ const RWA_VAULT_ABI = [
 
 export class VaultNotConfiguredError extends Error {
   constructor() {
-    super("RWA_VAULT_ADDRESS is not configured — deploy contracts and set the env first");
+    super("RWA_VAULT_ADDRESS is not configured for this chain");
     this.name = "VaultNotConfiguredError";
   }
 }
 
+function vaultAddress(chainId: number): Hex {
+  const address = getChainConfig(chainId).contracts.rwaVault;
+  if (!address) throw new VaultNotConfiguredError();
+  return address as Hex;
+}
+
 /** Reads current on-chain vault state — used both by the risk engine (pool
  *  utilization is a real risk feature) and by the AI-RWA ranking step. */
-export async function readVaultState(): Promise<VaultState> {
-  if (!config.contracts.rwaVault) throw new VaultNotConfiguredError();
-  const address = config.contracts.rwaVault as Hex;
+export async function readVaultState(chainId: number): Promise<VaultState> {
+  const address = vaultAddress(chainId);
+  const client = getPublicClient(chainId);
 
   const [aprBps, totalAssets, cap, utilizationBps] = await Promise.all([
-    publicClient.readContract({ address, abi: RWA_VAULT_ABI, functionName: "aprBps" }),
-    publicClient.readContract({ address, abi: RWA_VAULT_ABI, functionName: "totalAssets" }),
-    publicClient.readContract({ address, abi: RWA_VAULT_ABI, functionName: "cap" }),
-    publicClient.readContract({ address, abi: RWA_VAULT_ABI, functionName: "utilizationBps" }),
+    client.readContract({ address, abi: RWA_VAULT_ABI, functionName: "aprBps" }),
+    client.readContract({ address, abi: RWA_VAULT_ABI, functionName: "totalAssets" }),
+    client.readContract({ address, abi: RWA_VAULT_ABI, functionName: "cap" }),
+    client.readContract({ address, abi: RWA_VAULT_ABI, functionName: "utilizationBps" }),
   ]);
 
   return {
@@ -53,21 +59,17 @@ export async function readVaultState(): Promise<VaultState> {
   };
 }
 
-export async function previewVaultDeposit(amountWei: bigint): Promise<bigint> {
-  if (!config.contracts.rwaVault) throw new VaultNotConfiguredError();
-  return publicClient.readContract({
-    address: config.contracts.rwaVault as Hex,
+export async function previewVaultDeposit(chainId: number, amountWei: bigint): Promise<bigint> {
+  const address = vaultAddress(chainId);
+  return getPublicClient(chainId).readContract({
+    address,
     abi: RWA_VAULT_ABI,
     functionName: "previewDeposit",
     args: [amountWei],
   });
 }
 
-export async function isVaultPaused(): Promise<boolean> {
-  if (!config.contracts.rwaVault) throw new VaultNotConfiguredError();
-  return publicClient.readContract({
-    address: config.contracts.rwaVault as Hex,
-    abi: RWA_VAULT_ABI,
-    functionName: "paused",
-  });
+export async function isVaultPaused(chainId: number): Promise<boolean> {
+  const address = vaultAddress(chainId);
+  return getPublicClient(chainId).readContract({ address, abi: RWA_VAULT_ABI, functionName: "paused" });
 }

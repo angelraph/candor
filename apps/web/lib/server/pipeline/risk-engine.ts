@@ -16,13 +16,13 @@ const STABLECOINS = new Set(["USDT", "USDC", "DAI", "DUSDT"]);
  *  ~1:1 USD, everything else as unpriced (0) rather than guessing a rate we
  *  don't actually have. Swap in a real price feed before relying on this for
  *  anything beyond a demo. */
-async function estimateUsdSize(tokenAddress: string, amountWei: string): Promise<number> {
+async function estimateUsdSize(chainId: number, tokenAddress: string, amountWei: string): Promise<number> {
   // Decimals MUST come from the registry entry for this exact token, never a
   // caller-supplied guess — using the wrong decimals here silently produces
   // a wildly wrong size estimate (e.g. off by 10^12), which would in turn
   // make the rule engine misjudge risk. resolveAddress is the single source
   // of truth for both "is this a stablecoin" and "how many decimals".
-  const registryHit = await resolveAddress(tokenAddress).catch(() => null);
+  const registryHit = await resolveAddress(chainId, tokenAddress).catch(() => null);
   if (registryHit && STABLECOINS.has(registryHit.symbol)) {
     return Number(amountWei) / 10 ** registryHit.decimals;
   }
@@ -30,11 +30,12 @@ async function estimateUsdSize(tokenAddress: string, amountWei: string): Promise
 }
 
 export async function computeSwapRiskFeatures(params: {
+  chainId: number;
   fromTokenAddress: string;
   amountWei: string;
   quote: Quote;
 }): Promise<RiskFeatures> {
-  const requestedSizeUsd = await estimateUsdSize(params.fromTokenAddress, params.amountWei);
+  const requestedSizeUsd = await estimateUsdSize(params.chainId, params.fromTokenAddress, params.amountWei);
   return {
     priceImpactBps: params.quote.priceImpactBps,
     liquidityDepthUsd: params.quote.liquidityDepthUsd,

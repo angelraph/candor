@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { publicClient } from "../integrations/viem-clients";
+import { getPublicClient } from "../integrations/viem-clients";
 import * as okxDex from "../integrations/okx-dex";
 import { previewVaultDeposit } from "../integrations/vault";
 import type { Quote } from "@candor/shared";
@@ -22,6 +22,7 @@ export interface SwapSimulation {
  *  confirm card falls back to the aggregator's own estimate; the approval
  *  step itself is handled explicitly by the frontend before signing. */
 export async function simulateSwap(params: {
+  chainId: number;
   fromToken: Hex;
   toToken: Hex;
   amountWei: string;
@@ -29,6 +30,7 @@ export async function simulateSwap(params: {
   userAddress: Hex;
 }): Promise<SwapSimulation> {
   const quote = await okxDex.getQuote({
+    chainId: params.chainId,
     fromTokenAddress: params.fromToken,
     toTokenAddress: params.toToken,
     amountWei: params.amountWei,
@@ -36,6 +38,7 @@ export async function simulateSwap(params: {
   });
 
   const swapTx = await okxDex.getSwapTransaction({
+    chainId: params.chainId,
     fromTokenAddress: params.fromToken,
     toTokenAddress: params.toToken,
     amountWei: params.amountWei,
@@ -46,7 +49,7 @@ export async function simulateSwap(params: {
   let gas = swapTx.gas;
   if (!swapTx.mock) {
     try {
-      const estimated = await publicClient.estimateGas({
+      const estimated = await getPublicClient(params.chainId).estimateGas({
         account: params.userAddress,
         to: swapTx.to as Hex,
         data: swapTx.data as Hex,
@@ -83,13 +86,14 @@ const RWA_VAULT_DEPOSIT_ABI = [
 ] as const;
 
 export async function simulateVaultDeposit(params: {
+  chainId: number;
   vaultAddress: Hex;
   amountWei: string;
   userAddress: Hex;
 }): Promise<VaultDepositSimulation> {
-  const expectedShares = await previewVaultDeposit(BigInt(params.amountWei));
+  const expectedShares = await previewVaultDeposit(params.chainId, BigInt(params.amountWei));
 
-  const { request } = await publicClient
+  const { request } = await getPublicClient(params.chainId)
     .simulateContract({
       account: params.userAddress,
       address: params.vaultAddress,

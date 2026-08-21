@@ -15,6 +15,7 @@ import type { VerdictType } from "@candor/shared";
  * server-side secret.
  */
 export interface ConfirmTokenPayload {
+  chainId: number;
   intentHash: string;
   evidenceHash: string;
   verdictType: VerdictType;

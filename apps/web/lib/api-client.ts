@@ -48,6 +48,6 @@ export function finalizeIntent(
   });
 }
 
-export function getTrackRecord(): Promise<LedgerStats> {
-  return request<LedgerStats>("/api/track-record");
+export function getTrackRecord(chainId: number): Promise<LedgerStats> {
+  return request<LedgerStats>(`/api/track-record?chainId=${chainId}`);
 }

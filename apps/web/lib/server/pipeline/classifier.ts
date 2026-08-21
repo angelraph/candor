@@ -33,12 +33,12 @@ function parseAmountToken(raw: string): FastPathAmount | null {
   return { kind: "exact", wei: raw }; // human units — resolved to wei by the caller once decimals are known
 }
 
-export async function classifyFastPath(message: string): Promise<FastPathIntent | null> {
+export async function classifyFastPath(chainId: number, message: string): Promise<FastPathIntent | null> {
   const swapMatch = message.match(SWAP_RE);
   if (swapMatch) {
     const [, amountRaw, fromSym, toSym] = swapMatch;
     const amount = parseAmountToken(amountRaw);
-    const [from, to] = await Promise.all([resolveSymbol(fromSym), resolveSymbol(toSym)]);
+    const [from, to] = await Promise.all([resolveSymbol(chainId, fromSym), resolveSymbol(chainId, toSym)]);
     if (amount && amount.kind === "exact" && from && to) {
       return {
         type: "swap",
@@ -57,7 +57,7 @@ export async function classifyFastPath(message: string): Promise<FastPathIntent 
   if (depositMatch) {
     const [, amountRaw, tokenSym] = depositMatch;
     const amount = parseAmountToken(amountRaw);
-    const token = await resolveSymbol(tokenSym);
+    const token = await resolveSymbol(chainId, tokenSym);
     if (!amount || !token) return null;
 
     if (amount.kind === "full_balance") {

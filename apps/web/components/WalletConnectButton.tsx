@@ -2,18 +2,45 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
-import { xLayerMainnet } from "@/lib/wagmi-config";
+import { xLayerMainnet, xLayerTestnet } from "@/lib/wagmi-config";
+
+const NETWORKS = [
+  { chainId: xLayerMainnet.id, label: "X Layer", short: "Mainnet" },
+  { chainId: xLayerTestnet.id, label: "X Layer Testnet", short: "Testnet" },
+];
 
 function short(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+// Desktop extensions (MetaMask, OKX Wallet, Rabby, ...) announce themselves
+// via EIP-6963, so `connector.name` is already correct there. Mobile wallet
+// in-app browsers (OKX Wallet's app, MetaMask mobile, Trust Wallet) often
+// inject window.ethereum WITHOUT that announcement, so wagmi falls back to
+// its generic `injected` connector — whose name is literally the string
+// "Injected", which is what was rendering as "Connect Injected" on mobile.
+// Those same providers still set their own identifying flag on
+// window.ethereum even without EIP-6963, so read that instead.
+function detectInjectedWalletName(): string {
+  if (typeof window === "undefined") return "Wallet";
+  const eth = (window as { ethereum?: Record<string, unknown> }).ethereum;
+  if (!eth) return "Wallet";
+  if (eth.isOkxWallet || eth.isOKExWallet) return "OKX Wallet";
+  if (eth.isMetaMask) return "MetaMask";
+  if (eth.isTrust || eth.isTrustWallet) return "Trust Wallet";
+  if (eth.isCoinbaseWallet) return "Coinbase Wallet";
+  if (eth.isRabby) return "Rabby";
+  return "Wallet";
 }
 
 export function WalletConnectButton() {
   const { address, isConnected, chainId, status } = useAccount();
   const { connect, connectors: rawConnectors, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
+  const { switchChain, isPending: switchPending } = useSwitchChain();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [networkMenuOpen, setNetworkMenuOpen] = useState(false);
+  const networkMenuRef = useRef<HTMLDivElement>(null);
   // wagmi v2 doesn't expose a typed "which connector is pending" field on
   // useConnect (its v1 pendingConnector is gone), so track it ourselves —
   // set right before calling connect(), cleared once isPending drops.
@@ -67,6 +94,15 @@ export function WalletConnectButton() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!networkMenuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (networkMenuRef.current && !networkMenuRef.current.contains(e.target as Node)) setNetworkMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [networkMenuOpen]);
+
   // On page load, wagmi silently tries to restore a previous session
   // (`status: "reconnecting"`) before `isConnected` flips true. That window
   // used to be invisible: the button already rendered as clickable
@@ -112,6 +148,7 @@ export function WalletConnectButton() {
 
     if (connectors.length === 1) {
       const only = connectors[0];
+      const displayName = only.id === "injected" ? detectInjectedWalletName() : only.name;
       return (
         <div className="flex flex-col items-end">
           <button
@@ -122,7 +159,7 @@ export function WalletConnectButton() {
             disabled={isPending}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-90 disabled:opacity-50 dark:bg-paper dark:text-ink"
           >
-            {isPending ? "Connecting…" : `Connect ${only.name}`}
+            {isPending ? "Connecting…" : `Connect ${displayName}`}
           </button>
           {errorNote}
         </div>
@@ -164,22 +201,56 @@ export function WalletConnectButton() {
     );
   }
 
-  // The deployed contracts (vault, DemoUSDT/asset token, ReasoningLedger)
-  // only exist on X Layer mainnet now — testnet was the pre-launch chain,
-  // it's not a valid target anymore. Connected-on-testnet used to pass this
-  // check, which let a balanceOf/read against a mainnet-only address run
-  // against testnet RPC and silently return no data ("0x").
-  const wrongChain = chainId !== xLayerMainnet.id;
+  // Both chains are real, live deployments (see config.ts's TESTNET_CONTRACTS
+  // and the mainnet env vars) — testnet exists specifically so anyone
+  // without real funds can try the whole flow, then switch to mainnet only
+  // once they actually want to. Anything that isn't one of the two X Layer
+  // chains (e.g. still on Ethereum mainnet from a previous site) is the only
+  // state that actually needs a forced switch.
+  const currentNetwork = NETWORKS.find((n) => n.chainId === chainId);
+  const unsupportedChain = !currentNetwork;
 
   return (
     <div className="flex items-center gap-2">
-      {wrongChain && (
+      {unsupportedChain && (
         <button
           onClick={() => switchChain({ chainId: xLayerMainnet.id })}
-          className="rounded-full bg-warn px-3 py-1.5 text-xs font-medium text-ink"
+          disabled={switchPending}
+          className="rounded-full bg-warn px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
         >
-          Switch to X Layer
+          {switchPending ? "Switching…" : "Switch to X Layer"}
         </button>
+      )}
+      {currentNetwork && (
+        <div className="relative" ref={networkMenuRef}>
+          <button
+            onClick={() => setNetworkMenuOpen((v) => !v)}
+            disabled={switchPending}
+            className="flex items-center gap-1.5 rounded-full border border-black/10 px-3 py-1.5 text-xs font-medium disabled:opacity-50 dark:border-white/10"
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${currentNetwork.chainId === xLayerMainnet.id ? "bg-candor-500" : "bg-warn"}`}
+            />
+            {switchPending ? "Switching…" : currentNetwork.short}
+          </button>
+          {networkMenuOpen && (
+            <div className="absolute right-0 top-full z-10 mt-2 w-44 overflow-hidden rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-ink">
+              {NETWORKS.map((network) => (
+                <button
+                  key={network.chainId}
+                  onClick={() => {
+                    setNetworkMenuOpen(false);
+                    if (network.chainId !== chainId) switchChain({ chainId: network.chainId });
+                  }}
+                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  {network.label}
+                  {network.chainId === chainId && <span className="text-candor-500">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       <span className="rounded-full border border-black/10 px-3 py-1.5 font-mono text-xs dark:border-white/10">
         {address ? short(address) : ""}

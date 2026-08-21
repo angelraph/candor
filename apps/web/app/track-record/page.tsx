@@ -1,8 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getTrackRecord } from "@/lib/api-client";
+import { xLayerMainnet, xLayerTestnet } from "@/lib/wagmi-config";
+
+const NETWORKS = [
+  { chainId: xLayerMainnet.id, label: "Mainnet" },
+  { chainId: xLayerTestnet.id, label: "Testnet" },
+];
 
 const ROWS: Array<{ key: "executeCount" | "executeSmallerCount" | "waitCount" | "rejectCount"; label: string; color: string }> = [
   { key: "executeCount", label: "Execute", color: "bg-candor-500" },
@@ -12,14 +19,37 @@ const ROWS: Array<{ key: "executeCount" | "executeSmallerCount" | "waitCount" | 
 ];
 
 export default function TrackRecordPage() {
-  const { data, isLoading, error } = useQuery({ queryKey: ["track-record"], queryFn: getTrackRecord });
+  // No wallet connection required here — this page reads whichever ledger
+  // you ask for directly, so it works standalone.
+  const [chainId, setChainId] = useState<number>(xLayerMainnet.id);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["track-record", chainId],
+    queryFn: () => getTrackRecord(chainId),
+  });
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10">
       <Link href="/" className="text-sm text-black/50 hover:underline dark:text-white/50">
         ← back
       </Link>
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">Candor's Track Record</h1>
+      <div className="mt-4 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Candor's Track Record</h1>
+        <div className="flex rounded-full border border-black/10 p-0.5 text-xs dark:border-white/10">
+          {NETWORKS.map((network) => (
+            <button
+              key={network.chainId}
+              onClick={() => setChainId(network.chainId)}
+              className={`rounded-full px-3 py-1 font-medium transition ${
+                chainId === network.chainId
+                  ? "bg-ink text-paper dark:bg-paper dark:text-ink"
+                  : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              }`}
+            >
+              {network.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="mt-2 text-sm text-black/60 dark:text-white/50">
         Every verdict Candor has ever handed out lives on <code>ReasoningLedger</code>, including the ones nobody
         followed. It's read straight off the contract's counters, no indexer in between.

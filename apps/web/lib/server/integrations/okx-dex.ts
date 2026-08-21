@@ -10,7 +10,12 @@ import type { Quote } from "@candor/shared";
  * Runs in MOCK MODE (clearly logged, never silent) when credentials aren't
  * configured yet — this is deliberate so the rest of the pipeline can be
  * built and tested against realistic-shaped responses before OKX approves
- * API access, per the plan's mitigation for that exact risk.
+ * API access, per the plan's mitigation for that exact risk. It's also what
+ * naturally happens on X Layer testnet even with real credentials: OKX's
+ * aggregator has no real liquidity to quote there, so testnet swaps run
+ * against synthetic quotes the same way an unconfigured key would — that's
+ * expected, not a bug, since testnet exists to test the flow, not to move
+ * real value.
  */
 
 const OKX_DEX_PATH_PREFIX = "/api/v6/dex/aggregator";
@@ -53,6 +58,11 @@ export class OkxDexUnreachableError extends Error {
     this.name = "OkxDexUnreachableError";
   }
 }
+
+// X Layer testnet has no real liquidity for OKX's aggregator to route
+// through, so it always gets a synthetic quote regardless of credentials —
+// only mainnet ever attempts a live OKX call.
+const LIVE_QUOTE_CHAIN_ID = 196;
 
 // Swap/quote calls have no sensible fallback (they ARE the thing being
 // requested), so they get more patience. all-tokens feeds the classifier's
@@ -119,22 +129,23 @@ async function okxRequest<T>(
 // live key in later requires no changes to callers, only to `config.okxDexConfigured`.
 // ---------------------------------------------------------------------------
 
-function mockQuote(fromAmountWei: string): OkxQuoteResponse {
+function mockQuote(chainId: number, fromAmountWei: string): OkxQuoteResponse {
   // Deterministic-ish synthetic 1:1800 rate purely so the confirm card has
-  // plausible numbers to render during development. Never used once
-  // OKX_DEX_API_KEY etc. are configured.
+  // plausible numbers to render during development. Never used on mainnet
+  // once OKX_DEX_API_KEY etc. are configured.
   const toAmount = (BigInt(fromAmountWei) * 1800n) / 3_000_000n; // rough ETH~1800 vs 6-decimal stable-ish input
   return {
-    chainIndex: String(config.chainId),
+    chainIndex: String(chainId),
     toTokenAmount: toAmount.toString(),
     fromTokenAmount: fromAmountWei,
     priceImpactPercent: "0.12",
     estimateGasFee: "180000",
-    dexRouterList: [{ dexProtocol: { dexName: "mock-router/no-key-configured", percent: "100" } }],
+    dexRouterList: [{ dexProtocol: { dexName: "mock-router/no-liquidity-on-this-chain", percent: "100" } }],
   };
 }
 
 export interface GetQuoteParams {
+  chainId: number;
   fromTokenAddress: string;
   toTokenAddress: string;
   amountWei: string;
@@ -145,15 +156,15 @@ export interface DexQuoteResult extends Quote {
   mock: boolean;
 }
 
-export async function getAllTokens(): Promise<OkxTokenInfo[]> {
-  if (!config.okxDexConfigured) {
-    console.warn("[okx-dex] mock mode — OKX_DEX_API_KEY not set, returning empty token list");
+export async function getAllTokens(chainId: number): Promise<OkxTokenInfo[]> {
+  if (!config.okxDexConfigured || chainId !== LIVE_QUOTE_CHAIN_ID) {
+    console.warn(`[okx-dex] mock mode for chain ${chainId} — returning empty token list`);
     return [];
   }
   return okxRequest<OkxTokenInfo[]>(
     "GET",
     `${OKX_DEX_PATH_PREFIX}/all-tokens`,
-    { chainIndex: String(config.chainId) },
+    { chainIndex: String(chainId) },
     TOKEN_LIST_TIMEOUT_MS
   );
 }
@@ -162,15 +173,15 @@ export async function getQuote(params: GetQuoteParams): Promise<DexQuoteResult> 
   let data: OkxQuoteResponse;
   let mock = false;
 
-  if (!config.okxDexConfigured) {
-    console.warn("[okx-dex] mock mode — OKX_DEX_API_KEY not set, returning synthetic quote");
-    data = mockQuote(params.amountWei);
+  if (!config.okxDexConfigured || params.chainId !== LIVE_QUOTE_CHAIN_ID) {
+    console.warn(`[okx-dex] mock mode for chain ${params.chainId} — returning synthetic quote`);
+    data = mockQuote(params.chainId, params.amountWei);
     mock = true;
   } else {
     // OKX wraps /quote responses in a single-element array (verified against
     // a live response, not assumed from docs) — same convention as /swap.
     const results = await okxRequest<OkxQuoteResponse[]>("GET", `${OKX_DEX_PATH_PREFIX}/quote`, {
-      chainIndex: String(config.chainId),
+      chainIndex: String(params.chainId),
       fromTokenAddress: params.fromTokenAddress,
       toTokenAddress: params.toTokenAddress,
       amount: params.amountWei,
@@ -206,13 +217,13 @@ export interface DexSwapTx {
 }
 
 export async function getSwapTransaction(params: GetSwapTxParams): Promise<DexSwapTx> {
-  if (!config.okxDexConfigured) {
-    console.warn("[okx-dex] mock mode — OKX_DEX_API_KEY not set, returning non-executable placeholder calldata");
+  if (!config.okxDexConfigured || params.chainId !== LIVE_QUOTE_CHAIN_ID) {
+    console.warn(`[okx-dex] mock mode for chain ${params.chainId} — returning non-executable placeholder calldata`);
     return { to: params.toTokenAddress, data: "0x", value: "0", gas: "180000", mock: true };
   }
 
   const data = await okxRequest<OkxSwapResponse[]>("GET", `${OKX_DEX_PATH_PREFIX}/swap`, {
-    chainIndex: String(config.chainId),
+    chainIndex: String(params.chainId),
     fromTokenAddress: params.fromTokenAddress,
     toTokenAddress: params.toTokenAddress,
     amount: params.amountWei,
@@ -225,22 +236,4 @@ export async function getSwapTransaction(params: GetSwapTxParams): Promise<DexSw
   });
   const swap = data[0];
   return { to: swap.tx.to, data: swap.tx.data, value: swap.tx.value, gas: swap.tx.gas, mock: false };
-}
-
-/** Whether the caller's ERC-20 allowance needs an /approve-transaction step
- *  before the swap can execute — checked on-chain by the pipeline via viem,
- *  not this client; this just builds the approval calldata when needed. */
-export async function getApproveTransaction(params: {
-  tokenContractAddress: string;
-  approveAmountWei: string;
-}): Promise<{ to: string; data: string } | null> {
-  if (!config.okxDexConfigured) {
-    console.warn("[okx-dex] mock mode — skipping approve-transaction, no key configured");
-    return null;
-  }
-  return okxRequest<{ to: string; data: string }>("GET", `${OKX_DEX_PATH_PREFIX}/approve-transaction`, {
-    chainIndex: String(config.chainId),
-    tokenContractAddress: params.tokenContractAddress,
-    approveAmount: params.approveAmountWei,
-  });
 }

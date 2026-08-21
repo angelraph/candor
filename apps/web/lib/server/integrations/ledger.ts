@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
-import { config } from "../config";
-import { agentWalletClient, publicClient } from "./viem-clients";
+import { getChainConfig } from "../config";
+import { getAgentWalletClient, getPublicClient } from "./viem-clients";
 import type { LedgerStats, VerdictType } from "@candor/shared";
 
 /** Minimal ABI — just the functions Candor's backend actually calls/reads. */
@@ -59,12 +59,13 @@ const EMPTY_STATS: LedgerStats = {
 };
 
 /** Cheap aggregate read for the Track Record page — no indexer needed. */
-export async function readLedgerStats(): Promise<LedgerStats> {
-  if (!config.contracts.reasoningLedger) return EMPTY_STATS;
+export async function readLedgerStats(chainId: number): Promise<LedgerStats> {
+  const address = getChainConfig(chainId).contracts.reasoningLedger;
+  if (!address) return EMPTY_STATS;
 
   const [totalVerdicts, executeCount, executeSmallerCount, waitCount, rejectCount, overrodeCount] =
-    await publicClient.readContract({
-      address: config.contracts.reasoningLedger as Hex,
+    await getPublicClient(chainId).readContract({
+      address: address as Hex,
       abi: REASONING_LEDGER_ABI,
       functionName: "getStats",
     });
@@ -80,17 +81,19 @@ export async function readLedgerStats(): Promise<LedgerStats> {
 }
 
 /**
- * Anchors a verdict to ReasoningLedger and returns the broadcast tx hash (or
- * `null` if the ledger isn't configured — mock mode). Deliberately awaits
- * only the broadcast, not the on-chain receipt: getting a tx hash back from
- * the RPC is a single fast round-trip, whereas waiting for confirmation is
- * exactly the kind of "keep doing work after the response" pattern a
- * serverless function can't safely do (there's no guarantee the process
- * survives once the handler returns). The browser already holds a live
- * `publicClient` from wagmi for polling the user's own swap/deposit tx, so it
- * polls this hash the same way instead of the backend tracking status itself.
+ * Anchors a verdict to ReasoningLedger on the given chain and returns the
+ * broadcast tx hash (or `null` if that chain's ledger isn't configured —
+ * mock mode). Deliberately awaits only the broadcast, not the on-chain
+ * receipt: getting a tx hash back from the RPC is a single fast round-trip,
+ * whereas waiting for confirmation is exactly the kind of "keep doing work
+ * after the response" pattern a serverless function can't safely do (there's
+ * no guarantee the process survives once the handler returns). The browser
+ * already holds a live `publicClient` from wagmi for polling the user's own
+ * swap/deposit tx, so it polls this hash the same way instead of the backend
+ * tracking status itself.
  */
 export async function anchorVerdict(params: {
+  chainId: number;
   intentHash: Hex;
   evidenceHash: Hex;
   verdict: VerdictType;
@@ -98,13 +101,15 @@ export async function anchorVerdict(params: {
   overrode: boolean;
   userAddress: Hex;
 }): Promise<Hex | null> {
-  if (!agentWalletClient || !config.contracts.reasoningLedger) {
-    console.warn(`[ledger] mock mode — would anchor verdict for ${params.intentHash}`, params);
+  const agentWalletClient = getAgentWalletClient(params.chainId);
+  const address = getChainConfig(params.chainId).contracts.reasoningLedger;
+  if (!agentWalletClient || !address) {
+    console.warn(`[ledger] mock mode on chain ${params.chainId} — would anchor verdict for ${params.intentHash}`, params);
     return null;
   }
 
   return agentWalletClient.writeContract({
-    address: config.contracts.reasoningLedger as Hex,
+    address: address as Hex,
     abi: REASONING_LEDGER_ABI,
     functionName: "recordVerdict",
     args: [
@@ -115,5 +120,12 @@ export async function anchorVerdict(params: {
       params.overrode,
       params.userAddress,
     ],
+    // The Map in viem-clients.ts holds a bare `WalletClient`, which erases
+    // the account/chain type params getAgentWalletClient's construction
+    // actually binds — both are always set (it's built with
+    // createWalletClient({ account, chain, ... })), so this is just
+    // restating what's already true, not a runtime-meaningful override.
+    account: agentWalletClient.account!,
+    chain: agentWalletClient.chain,
   });
 }

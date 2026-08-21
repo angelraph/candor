@@ -86,6 +86,16 @@ export function ChatPanel() {
 
   async function handleDecision(decision: Decision) {
     if (!confirmCard || !address || !publicClient) return;
+    // The card was quoted and risk-checked against a specific chain (its
+    // token addresses, vault, ledger are only valid there). Since the wallet
+    // can switch networks at any time via the header's network switcher, a
+    // card left open across a switch would sign a transaction built for the
+    // chain it was prepared on, not the one the wallet is now connected to.
+    if (confirmCard.chainId !== chainId) {
+      setError("You switched networks after this quote was prepared. Ask again on the current network.");
+      setConfirmCard(null);
+      return;
+    }
     setBusy(decision);
     setError(null);
     try {

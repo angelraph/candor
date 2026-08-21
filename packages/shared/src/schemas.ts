@@ -145,6 +145,11 @@ export const ConfirmCardSchema = z.object({
   evidenceHash: Bytes32Schema,
   preparedAt: z.number().int(),
   expiresAt: z.number().int(),
+  // Which chain this card was prepared against (X Layer mainnet or
+  // testnet) — the frontend checks the wallet is still on this chain
+  // before finalizing, since switching mid-flow would sign a testnet tx
+  // against a mainnet-prepared card or vice versa.
+  chainId: z.number().int(),
   // Opaque signed token carrying this card's server-side state (prepared tx,
   // who it's for) — there's no backend session store on serverless, so the
   // browser must echo this back on /finalize instead of the server looking

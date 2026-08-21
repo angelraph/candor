@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { publicClient } from "./viem-clients";
+import { getPublicClient } from "./viem-clients";
 
 const ERC20_ABI = [
   {
@@ -23,12 +23,12 @@ const ERC20_ABI = [
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
 ] as const;
 
-export async function getBalance(token: Hex, owner: Hex): Promise<bigint> {
-  return publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] });
+export async function getBalance(chainId: number, token: Hex, owner: Hex): Promise<bigint> {
+  return getPublicClient(chainId).readContract({ address: token, abi: ERC20_ABI, functionName: "balanceOf", args: [owner] });
 }
 
-export async function getAllowance(token: Hex, owner: Hex, spender: Hex): Promise<bigint> {
-  return publicClient.readContract({
+export async function getAllowance(chainId: number, token: Hex, owner: Hex, spender: Hex): Promise<bigint> {
+  return getPublicClient(chainId).readContract({
     address: token,
     abi: ERC20_ABI,
     functionName: "allowance",
@@ -39,10 +39,11 @@ export async function getAllowance(token: Hex, owner: Hex, spender: Hex): Promis
 /** Reads a token's symbol+decimals directly on-chain — deliberately independent
  *  of the OKX token list, so core infrastructure (e.g. the vault's own asset)
  *  never depends on a third-party aggregator being reachable. */
-export async function getTokenMetadata(token: Hex): Promise<{ symbol: string; decimals: number }> {
+export async function getTokenMetadata(chainId: number, token: Hex): Promise<{ symbol: string; decimals: number }> {
+  const client = getPublicClient(chainId);
   const [symbol, decimals] = await Promise.all([
-    publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: "symbol" }),
-    publicClient.readContract({ address: token, abi: ERC20_ABI, functionName: "decimals" }),
+    client.readContract({ address: token, abi: ERC20_ABI, functionName: "symbol" }),
+    client.readContract({ address: token, abi: ERC20_ABI, functionName: "decimals" }),
   ]);
   return { symbol: symbol.toUpperCase(), decimals };
 }

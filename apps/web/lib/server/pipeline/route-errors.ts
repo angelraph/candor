@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { UnsupportedIntentError } from "./intent-pipeline";
+import { UnsupportedIntentError, UnsupportedChainError } from "./intent-pipeline";
 import { VaultNotConfiguredError } from "../integrations/vault";
 import { LlmNotConfiguredError } from "./agent-llm";
 import { OkxDexUnreachableError } from "../integrations/okx-dex";
@@ -9,6 +9,9 @@ import { OkxDexUnreachableError } from "../integrations/okx-dex";
  *  exports (plus a small set of route config options) from a route file —
  *  anything else fails the build's route export validation. */
 export function handlePipelineError(err: unknown): NextResponse {
+  if (err instanceof UnsupportedChainError) {
+    return NextResponse.json({ error: "unsupported_chain", message: err.message }, { status: 400 });
+  }
   if (err instanceof UnsupportedIntentError) {
     return NextResponse.json({ error: "unsupported_intent", message: err.message }, { status: 422 });
   }
