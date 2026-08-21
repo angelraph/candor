@@ -1,4 +1,5 @@
 import type { Hex } from "viem";
+import { X_LAYER_TESTNET } from "@candor/shared";
 import { config, getChainConfig } from "../config";
 import { getAllTokens, OkxDexUnreachableError } from "./okx-dex";
 import { getTokenMetadata } from "./erc20";
@@ -9,15 +10,27 @@ export interface TokenInfo {
   decimals: number;
 }
 
-/** Obviously-fake placeholder addresses (incrementing from 0x...01), used only
- *  when OKX_DEX_API_KEY isn't configured yet, so the classifier/pipeline can
- *  be exercised end-to-end in dev. Never resembles a real deployed address. */
+/** Obviously-fake placeholder addresses (incrementing from 0x...01) — a last
+ *  resort for a chain with no real core tokens AND no live OKX list at all
+ *  (a fully-unconfigured local dev sandbox). Never used for X Layer testnet,
+ *  which has real deployed tokens below instead — presenting one of these as
+ *  if it were a real address on a chain that actually has contracts is
+ *  exactly what made testnet confirm cards look broken. */
 const MOCK_TOKENS: TokenInfo[] = [
   { symbol: "USDT", address: "0x0000000000000000000000000000000000000001", decimals: 6 },
   { symbol: "ETH", address: "0x0000000000000000000000000000000000000002", decimals: 18 },
   { symbol: "WETH", address: "0x0000000000000000000000000000000000000002", decimals: 18 },
   { symbol: "OKB", address: "0x0000000000000000000000000000000000000003", decimals: 18 },
   { symbol: "USDC", address: "0x0000000000000000000000000000000000000004", decimals: 6 },
+];
+
+/** Real, verified X Layer testnet deployment (packages/contracts/src/mocks/
+ *  DemoWETH.sol) — deployed specifically so "swap USDT to ETH" resolves to
+ *  an actual on-chain contract on testnet instead of a fake placeholder.
+ *  Deploy tx: 0x516ce6f3c209e95d601965e202d65087a92e1727b3c4be78f93ada713675923c. */
+const TESTNET_TOKENS: TokenInfo[] = [
+  { symbol: "ETH", address: "0xf792ad911830478b7c08206d939c1e19c14d8cb6", decimals: 18 },
+  { symbol: "WETH", address: "0xf792ad911830478b7c08206d939c1e19c14d8cb6", decimals: 18 },
 ];
 
 // Every cache here is keyed by chainId — mainnet and testnet have entirely
@@ -78,8 +91,12 @@ export async function getTokenRegistry(chainId: number): Promise<{ tokens: Token
   const coreTokens = await getCoreTokens(chainId);
 
   if (!config.okxDexConfigured || chainId !== 196) {
+    // Testnet has real deployed tokens (core + TESTNET_TOKENS) — only reach
+    // for the universal MOCK_TOKENS placeholders on some other, genuinely
+    // unconfigured chain, where there's nothing real to offer at all.
+    const fallbackList = chainId === X_LAYER_TESTNET.id ? TESTNET_TOKENS : MOCK_TOKENS;
     const coreSymbols = new Set(coreTokens.map((t) => t.symbol));
-    const tokens = [...coreTokens, ...MOCK_TOKENS.filter((t) => !coreSymbols.has(t.symbol))];
+    const tokens = [...coreTokens, ...fallbackList.filter((t) => !coreSymbols.has(t.symbol))];
     return { tokens, source: "mock" };
   }
 
