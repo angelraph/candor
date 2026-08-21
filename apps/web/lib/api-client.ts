@@ -51,3 +51,7 @@ export function finalizeIntent(
 export function getTrackRecord(chainId: number): Promise<LedgerStats> {
   return request<LedgerStats>(`/api/track-record?chainId=${chainId}`);
 }
+
+export function requestTestnetFaucet(address: string): Promise<{ txHash: string }> {
+  return request<{ txHash: string }>("/api/testnet-faucet", { method: "POST", body: JSON.stringify({ address }) });
+}

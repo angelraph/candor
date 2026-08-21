@@ -4,10 +4,15 @@ import { useState } from "react";
 import { useAccount, usePublicClient, useSendTransaction, useWriteContract } from "wagmi";
 import type { Hash } from "viem";
 import type { ConfirmCard } from "@candor/shared";
-import { postIntent, finalizeIntent, ApiError } from "@/lib/api-client";
+import { postIntent, finalizeIntent, requestTestnetFaucet, ApiError } from "@/lib/api-client";
 import { ERC20_ABI } from "@/lib/erc20-abi";
 import { describeTxError } from "@/lib/describe-error";
+import { xLayerTestnet } from "@/lib/wagmi-config";
 import { ConfirmCardView } from "./ConfirmCardView";
+
+// Official OKX faucet — the one thing we can't hand out ourselves, since it
+// pays out the chain's native gas token, not an ERC20 we control.
+const OKB_FAUCET_URL = "https://web3.okx.com/xlayer/faucet";
 
 interface LedgerStatusResult {
   status: "unconfigured" | "pending" | "confirmed" | "failed";
@@ -37,6 +42,21 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ txHash: string | null; anchored: boolean } | null>(null);
   const [ledgerStatus, setLedgerStatus] = useState<LedgerStatusResult | null>(null);
+  const [faucetState, setFaucetState] = useState<"idle" | "pending" | "done" | "error">("idle");
+  const [faucetError, setFaucetError] = useState<string | null>(null);
+
+  async function handleFaucet() {
+    if (!address) return;
+    setFaucetState("pending");
+    setFaucetError(null);
+    try {
+      await requestTestnetFaucet(address);
+      setFaucetState("done");
+    } catch (err) {
+      setFaucetState("error");
+      setFaucetError(err instanceof ApiError ? err.message : "Couldn't reach the faucet. Try again.");
+    }
+  }
 
   // The ledger-anchor tx is submitted server-side (see finalizeIntent) but
   // confirmed here in the browser — same publicClient already used to track
@@ -171,8 +191,36 @@ export function ChatPanel() {
     }
   }
 
+  const onTestnet = isConnected && chainId === xLayerTestnet.id;
+
   return (
     <div className="flex w-full max-w-xl flex-col items-center gap-4">
+      {onTestnet && !confirmCard && (
+        <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 text-xs">
+          <span className="font-medium text-black/70 dark:text-white/70">Testing on X Layer Testnet:</span>
+          <a
+            href={OKB_FAUCET_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-black/10 px-3 py-1 font-medium underline-offset-2 hover:underline dark:border-white/10"
+          >
+            Get testnet OKB (gas) ↗
+          </a>
+          <button
+            onClick={handleFaucet}
+            disabled={faucetState === "pending"}
+            className="rounded-full bg-ink px-3 py-1 font-medium text-paper transition hover:opacity-90 disabled:opacity-50 dark:bg-paper dark:text-ink"
+          >
+            {faucetState === "pending"
+              ? "Sending…"
+              : faucetState === "done"
+                ? "Sent — get 1000 more USDT"
+                : "Get 1000 test USDT"}
+          </button>
+          {faucetState === "error" && <span className="text-danger">{faucetError}</span>}
+        </div>
+      )}
+
       {!confirmCard && (
         <div className="w-full">
           <div className="flex gap-2">
