@@ -18,6 +18,12 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
   const { action, quote, vaultState, verdict } = card;
   const isClean = verdict.verdict === "EXECUTE";
   const expired = Date.now() > card.expiresAt;
+  // A mocked quote has no real route to execute — confirming it only
+  // anchors Candor's verdict, it never asks the wallet to sign anything
+  // (see intent-pipeline.ts's preparedTx logic for why: the alternative was
+  // a meaningless zero-value, empty-calldata "swap" that OKX Wallet's own
+  // security scanner correctly refused to sign).
+  const mockNoTx = action.type === "swap" && quote?.mock === true;
 
   return (
     <div className="w-full max-w-xl rounded-2xl border border-black/10 bg-white/70 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
@@ -66,6 +72,13 @@ export function ConfirmCardView({ card, busy, onConfirm, onOverride, onDismiss }
       {verdict.verdict === "EXECUTE_SMALLER" && verdict.suggestedAmountWei && (
         <p className="mt-2 text-xs text-black/60 dark:text-white/50">
           Suggested amount instead: <span className="font-mono">{verdict.suggestedAmountWei}</span>
+        </p>
+      )}
+
+      {mockNoTx && !expired && (
+        <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+          This quote is mocked, so confirming won't ask your wallet to sign anything — it just anchors Candor's
+          verdict on-chain.
         </p>
       )}
 

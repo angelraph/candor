@@ -199,7 +199,14 @@ export async function processIntent(req: IntentRequest): Promise<ConfirmCard> {
   const intentHash = computeIntentHash({ userAddress, chainId, action, nonce: now });
   const evidenceHash = computeEvidenceHash(verdict);
   const expiresAt = now + CONFIRM_CARD_TTL_MS;
-  const preparedTx = verdict.verdict === "REJECT" ? null : tx;
+  // A mocked swap quote (no live DEX routing on this chain) has no real
+  // route to execute — its "tx" is a zero-value, empty-calldata send to the
+  // target token's own address, which is meaningless on-chain and reads as
+  // exactly the kind of pattern wallet security scanners are built to
+  // block (verified live: OKX Wallet refused to sign it outright on
+  // testnet). Treat it the same as a REJECT verdict: anchor Candor's
+  // verdict, never hand the wallet something to sign.
+  const preparedTx = verdict.verdict === "REJECT" || quote?.mock ? null : tx;
 
   const token = signConfirmToken({
     chainId,
