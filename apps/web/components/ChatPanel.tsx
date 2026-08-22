@@ -8,6 +8,7 @@ import { postIntent, finalizeIntent, requestTestnetFaucet, ApiError } from "@/li
 import { ERC20_ABI } from "@/lib/erc20-abi";
 import { describeTxError } from "@/lib/describe-error";
 import { xLayerTestnet } from "@/lib/wagmi-config";
+import { explorerTxUrl } from "@/lib/explorer";
 import { ConfirmCardView } from "./ConfirmCardView";
 
 // Official OKX faucet — the one thing we can't hand out ourselves, since it
@@ -29,6 +30,25 @@ const EXAMPLE_PROMPTS = [
 
 type Decision = "confirm" | "override" | "dismiss";
 
+/** A tx hash, shortened and linked to the right chain's OKLink explorer —
+ *  falls back to plain unlinked text for an unrecognized chain rather than
+ *  guessing a URL that might 404. */
+function TxHashLink({ chainId, hash, label }: { chainId: number; hash: string; label: string }) {
+  const url = explorerTxUrl(chainId, hash);
+  const text = `${label}: ${hash}`;
+  if (!url) return <p className="mt-1 font-mono text-xs">{text}</p>;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-1 block font-mono text-xs text-candor-600 underline-offset-2 hover:underline dark:text-candor-400"
+    >
+      {text} ↗
+    </a>
+  );
+}
+
 export function ChatPanel() {
   const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient();
@@ -40,7 +60,7 @@ export function ChatPanel() {
   const [confirmCard, setConfirmCard] = useState<ConfirmCard | null>(null);
   const [busy, setBusy] = useState<Decision | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ txHash: string | null; anchored: boolean } | null>(null);
+  const [result, setResult] = useState<{ txHash: string | null; anchored: boolean; chainId: number } | null>(null);
   const [ledgerStatus, setLedgerStatus] = useState<LedgerStatusResult | null>(null);
   const [faucetState, setFaucetState] = useState<"idle" | "pending" | "done" | "error">("idle");
   const [faucetError, setFaucetError] = useState<string | null>(null);
@@ -123,7 +143,7 @@ export function ChatPanel() {
       watchLedgerAnchor(ledgerTxHash as Hash | null);
 
       if (!tx) {
-        setResult({ txHash: null, anchored: true });
+        setResult({ txHash: null, anchored: true, chainId: confirmCard.chainId });
         setConfirmCard(null);
         return;
       }
@@ -182,7 +202,7 @@ export function ChatPanel() {
         );
       }
 
-      setResult({ txHash, anchored: true });
+      setResult({ txHash, anchored: true, chainId: confirmCard.chainId });
       setConfirmCard(null);
     } catch (err) {
       setError(describeTxError(err));
@@ -271,7 +291,7 @@ export function ChatPanel() {
       {result && (
         <div className="w-full rounded-xl border border-candor-500/30 bg-candor-50 p-4 text-sm dark:bg-candor-600/10">
           <p className="font-semibold text-candor-600 dark:text-candor-400">Done.</p>
-          {result.txHash && <p className="mt-1 font-mono text-xs">tx: {result.txHash}</p>}
+          {result.txHash && <TxHashLink chainId={result.chainId} hash={result.txHash} label="tx" />}
           <p className="mt-1 text-xs text-black/50 dark:text-white/50">
             Ledger anchor:{" "}
             {ledgerStatus?.status === "confirmed"
@@ -282,6 +302,9 @@ export function ChatPanel() {
                   ? "skipped (mock mode)"
                   : "pending…"}
           </p>
+          {ledgerStatus?.txHash && (
+            <TxHashLink chainId={result.chainId} hash={ledgerStatus.txHash} label="ledger tx" />
+          )}
           <button onClick={() => setResult(null)} className="mt-2 text-xs underline">
             Ask something else
           </button>
